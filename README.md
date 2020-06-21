@@ -3,7 +3,7 @@ This is an experimental project to implement dynamic dataflow execution on CGRA.
 
 This project is tested on the simulator of Icarus Verilog, but not yet on any FPGA or real chips.
 
-# Architecture Outline
+# Architecture
 In this CGRA each PE has 8 full-duplex ports, namely U0, U1, D0, D1, L0, L1, R0, R1. Each port connects to (a corresponding port of) a neighbor PE. For example, R0 conntect to the PE on the right, and R1 connected to the PE two steps on the right. The other prefixes means UP, DOWN, and LEFT, respectively. Each PE can perform two instructions concurrently, but the two instructions can not share any input or output port. Each token is 16-bit wide, with higher 8 bits acts as tag and lower 8 bits acts as data. The tokens are buffered in FIFOs if the destination PEs are not ready to receive them. Each PE also has an internal 16-bit register for storing some internal state of the instructions.
 
 # How to Build and Run an Example
