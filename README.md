@@ -13,3 +13,14 @@ If ready, run the following command in cmd
 run.bat example/popcount.csv
 
 This will show a list of read and write of each FIFO of each PE, which effectively represents the tokens transmitted and received by each PE at each cycle.
+
+# About the Example
+The example computes the population count (number of bit 1) of 0 ~ 9. The population count of a number X is computed by iteratively execute X = X&(X-1) and count how many iterations are required for X to reach 0.
+
+example/popcount.csv is the data flow graph implemented by our CGRA instructions.
+
+example/popcount.odg is a more readable data flow graph of the example, you may need LibreOffice to open it.
+
+example/popcount.ods is a colorized version of example/popcount.csv, with matching color in example/popcount.odg.
+
+The output of the computation are pairs of tokens (i, popcount(i)), which will eventually flow to the ST node. Thus we can check the correctness of the computation by examining the input of the ST node.
