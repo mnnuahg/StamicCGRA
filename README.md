@@ -15,7 +15,7 @@ run.bat example/popcount.csv
 This will show a list of read and write of each FIFO of each PE, which effectively represents the tokens transmitted and received by each PE at each cycle.
 
 # About the Example
-The example computes the population count (number of bit 1) of 0 ~ 9. The population count of a number X is computed by iteratively execute X = X&(X-1) and count how many iterations are required for X to reach 0.
+The example computes the population count (number of bit 1) of 0 ~ 9. The population count of a number X is computed by iteratively execute X = X&(X-1) and count how many iterations are required for X to reach 0. Therefore, this example is actually a 2-level nested loop.
 
 example/popcount.csv is the data flow graph implemented by our CGRA instructions.
 
