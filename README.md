@@ -26,5 +26,5 @@ example/popcount.ods is a colorized version of example/popcount.csv, with matchi
 The output of the computation are pairs of tokens (i, popcount(i)), which will eventually flow to the ST node. Thus we can check the correctness of the computation by examining the input of the ST node. Actually we let the simulator to print a message whenever the ST node is executed, you can search "Popcount" in the output message.
 
 # References
-Dennis and Misunas, “A Preliminary Architecture for a Basic Data Flow Processor”
+Dennis and Misunas, “A Preliminary Architecture for a Basic Data Flow Processor”\
 Arvind and Nikhil, “Executing a Program on the MIT Tagged-Token Dataflow Architecture” 
