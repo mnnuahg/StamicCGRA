@@ -1,5 +1,5 @@
 # Outline
-This is an experimental project to implement dynamic dataflow execution on CGRA. In contrast to static dataflow execution, dynamic dataflow execution allows different iterations of a loop to be executed in parallel, with tags attached to tokens to differentiate the iterations they are beloning to. In this project we implement special instructions for the PEs (processing elements) of the CGRA to assign new tags to a token when the token enters a loop, to restore old tag to a token when the token leaves a loop, and to find tokens with matching tag when an operation requires multiple input tokens. The tag assignment/restore/matching are performed in static dataflow fashion by group of PEs with the special instructions.
+This is an experimental project to implement dynamic dataflow execution on CGRA. In contrast to static dataflow execution, dynamic dataflow execution allows different iterations of a loop to be executed in parallel, with tags attached to tokens to differentiate the iterations they are beloning to. In this project we implement special instructions for the PEs (processing elements) of the CGRA to assign new tags to a token when the token enters a loop, to restore old tag to a token when the token leaves a loop, and to find tokens with matching tag when an operation requires multiple input tokens. The tag assignment/restore/matching are performed in static dataflow fashion by group of PEs with the special instructions, hance the name StamicCGRA.
 
 This project is tested on the simulator of Icarus Verilog, but not yet on any FPGA or real chips.
 
@@ -23,4 +23,8 @@ example/popcount.odg is a more readable data flow graph of the example, you may 
 
 example/popcount.ods is a colorized version of example/popcount.csv, with matching color in example/popcount.odg.
 
-The output of the computation are pairs of tokens (i, popcount(i)), which will eventually flow to the ST node. Thus we can check the correctness of the computation by examining the input of the ST node.
+The output of the computation are pairs of tokens (i, popcount(i)), which will eventually flow to the ST node. Thus we can check the correctness of the computation by examining the input of the ST node. Actually we let the simulator to print a message whenever the ST node is executed, you can search "Popcount" in the output message.
+
+# References
+Dennis and Misunas, “A Preliminary Architecture for a Basic Data Flow Processor”
+Arvind and Nikhil, “Executing a Program on the MIT Tagged-Token Dataflow Architecture” 
