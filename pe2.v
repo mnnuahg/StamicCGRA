@@ -21,6 +21,18 @@
 `define OP_NE_DATA      18  // eq_data     in, out
 `define OP_ST           19  // st          addr_in, data_in, sig_out
 `define OP_DISCARD      20  // discard     in0, in1, in2, in3
+`define OP_TOK_TO_BUS   21  // tok_to_bus  imm_n, in, sig_bus, out_bus
+`define OP_BUS_TO_TOK   22  // bus_to_tok  imm_n, in_bus, sig_bus, out
+`define OP_BUS_AND_BIT  23  // bus_and_bit imm_exclsb, imm_n1, imm_n2, in_bus, out_bus
+`define OP_BUS_OR_BIT   24  // bus_nand_bit imm_exclsb, imm_n1, imm_n2, in_bus, out_bus
+`define OP_BUS_NAND_BIT 25  // bus_or_bit imm_exclsb, imm_n1, imm_n2, in_bus, out_bus
+`define OP_BUS_NOR_BIT  26  // bus_nor_bit imm_exclsb, imm_n1, imm_n2, in_bus, out_bus
+`define OP_TAG_MATCHER  27  // tag_matcher imm_n, sig_bus, data_bus
+`define OP_MATCHER_CTRL 28  // match_ctrl imm_n, imm_numInput, tag_sync_bus, out_sync_bus
+`define OP_STORE_TAG2   29  // store_tag2 in_bus, out_sig_bus
+`define OP_RESTORE_TAG2 30  // restore_tag tag_in_bus, data_in_bus, out
+`define OP_BUS_FWD_LH   31  // bus_fwd_lh in_bus, out_bus
+`define OP_BUS_CFWD_HI  32  // bus_cfwd_hi in_sig_bus, out_bus
 
 `define DIR_U0          0
 `define DIR_U1          1
@@ -30,10 +42,16 @@
 `define DIR_L1          5
 `define DIR_R0          6
 `define DIR_R1          7
+`define DIR_HB          0
+`define DIR_VB          1
+
+`define ALU_IN_SEL_HBUS 8
+`define ALU_IN_SEL_VBUS 9
+`define ALU_IN_SEL_DATA 10
 
 `define DATA_SEL_INC    0
 `define DATA_SEL_DEC    1
-`define DATA_SEL_TOKEN  2
+`define DATA_SEL_ALUIN0 2
 `define DATA_SEL_DECODE 3
 
 `define ALU_FUNC_IN1    0
@@ -48,6 +66,7 @@
 `define ALU_FUNC_EQ     9
 `define ALU_FUNC_NE     10
 `define ALU_FUNC_ST     11
+// We can define only 16 ALU functions now
 
 `define STATE_INIT              0
 `define STATE_ALREADY_FWD_NEAR  1
@@ -56,19 +75,27 @@
 `define STATE_DONT_DELAY_FWD    4
 `define STATE_WAIT_ARRIVE       5
 
+`define VALID_PART_NONE 0
+`define VALID_PART_HI   1
+`define VALID_PART_LO   2
+`define VALID_PART_ALL  3
+
 `define INST_SIZE       32
 `define DATA_SIZE       8 
+`define LG_DATA_SIZE    3
 
 module select2#(parameter DATA_SIZE = 8)
                (input [DATA_SIZE-1:0] in0, input [DATA_SIZE-1:0] in1, input sel0, input sel1, output [DATA_SIZE-1:0] out);
-    reg [DATA_SIZE-1:0] out;
+    reg [DATA_SIZE-1:0] outReg;
+    
+    assign out = outReg;
     
     always @* begin
-        out = 32'bxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx;
+        outReg = 32'bxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx;
         if (sel0 && !sel1)
-            out = in0;
+            outReg = in0;
         else if (!sel0 && sel1)
-            out = in1;
+            outReg = in1;
         else if (sel0 && sel1)
         begin
             $display("%m: sel0 and sel1 are both on!");
@@ -79,81 +106,204 @@ endmodule
 
 module mux2#(parameter DATA_SIZE = 8)
        (input [DATA_SIZE-1:0] in0, input [DATA_SIZE-1:0] in1, input sel, output [DATA_SIZE-1:0] out);
-    reg [DATA_SIZE-1:0] out;
+    reg [DATA_SIZE-1:0] outReg;
+    
+    assign out = outReg;
     
     always @* begin
         case (sel)
-            0: out = in0;
-            1: out = in1;
+            0: outReg = in0;
+            1: outReg = in1;
         endcase
     end
 endmodule
 
 module mux4#(parameter DATA_SIZE = 8)
        (input [DATA_SIZE-1:0] in0, input [DATA_SIZE-1:0] in1, input [DATA_SIZE-1:0] in2, input [DATA_SIZE-1:0] in3, input [1:0] sel, output [DATA_SIZE-1:0] out);
-    reg [DATA_SIZE-1:0] out;
+    reg [DATA_SIZE-1:0] outReg;
+    
+    assign out = outReg;
     
     always @* begin
         case (sel)
-            0: out = in0;
-            1: out = in1;
-            2: out = in2;
-            3: out = in3;
+            0: outReg = in0;
+            1: outReg = in1;
+            2: outReg = in2;
+            3: outReg = in3;
         endcase
     end
 endmodule
 
 module mux8#(parameter DATA_SIZE = 8)
        (input [7:0][DATA_SIZE-1:0] in, input [2:0] sel, output [DATA_SIZE-1:0] out);
-    reg [DATA_SIZE-1:0] out;
+    reg [DATA_SIZE-1:0] outReg;
+    
+    assign out = outReg;
     
     always @* begin
-        out = in[sel];
+        outReg = in[sel];
+    end
+endmodule
+
+module mux12#(parameter DATA_SIZE = 8)
+       (input [7:0][DATA_SIZE-1:0] in0_7,
+        input [DATA_SIZE-1:0] in8,
+        input [DATA_SIZE-1:0] in9,
+        input [DATA_SIZE-1:0] in10,
+        input [DATA_SIZE-1:0] in11, 
+        input [3:0] sel, output [DATA_SIZE-1:0] out);
+    reg [DATA_SIZE-1:0] outReg;
+    
+    assign out = outReg;
+    
+    always @* begin
+        if (sel[3] == 0)
+            outReg = in0_7[sel];
+        else if (sel == 8)
+            outReg = in8;
+        else if (sel == 9)
+            outReg = in9;
+        else if (sel == 10)
+            outReg = in10;
+        else
+            outReg = in11;
     end
 endmodule
 
 module increase#(parameter DATA_SIZE = 8)
                 (input [DATA_SIZE-1:0] in, output [DATA_SIZE-1:0] out);
-    reg [DATA_SIZE-1:0] out;
+    reg [DATA_SIZE-1:0] outReg;
+    
+    assign out = outReg;
     
     always @* begin
-        out = in+1;
+        outReg = in+1;
     end
 endmodule
 
 module decrease#(parameter DATA_SIZE = 8)
                 (input [DATA_SIZE-1:0] in, output [DATA_SIZE-1:0] out);
-    reg [DATA_SIZE-1:0] out;
+    reg [DATA_SIZE-1:0] outReg;
+    
+    assign out = outReg;
     
     always @* begin
-        out = in-1;
+        outReg = in-1;
     end
 endmodule
 
 module equal#(parameter DATA_SIZE = 8)
              (input [DATA_SIZE-1:0] in0, input [DATA_SIZE-1:0] in1, output out);
-    reg out;
+    reg outReg;
+    
+    assign out = outReg;
     
     always @* begin
-        out = (in0 == in1);
+        outReg = (in0 == in1);
     end
 endmodule
 
 module isZero#(parameter DATA_SIZE = 8)
               (input [DATA_SIZE-1:0] in, output out);
-    reg out;
+    reg outReg;
+    
+    assign out = outReg;
     
     always @* begin
-        out = (in == 0);
+        outReg = (in == 0);
     end
 endmodule
 
-module notZero#(parameter DATA_SIZE = 8)
-               (input [DATA_SIZE-1:0] in, output out);
-    reg out;
+module validNotZero#(parameter DATA_SIZE = 8)
+               (input [DATA_SIZE-1:0] in, input [2:0] validBits, input excludeLSB, output out);
+    reg outReg;
+    
+    assign out = outReg;
+    wire [DATA_SIZE-1:0] power = validBits == 0 ? 0 : (1 << validBits);
+    wire [DATA_SIZE-1:0] validMask = power-1;
     
     always @* begin
-        out = (in != 0);
+        outReg = excludeLSB ? ((in[`DATA_SIZE-1:1] & validMask[`DATA_SIZE-1:1]) != 0) : ((in & validMask) != 0);
+    end
+endmodule
+
+module validAllOn#(parameter DATA_SIZE = 8)
+               (input [DATA_SIZE-1:0] in, input [2:0] validBits, input excludeLSB, output out);
+    reg outReg;
+    
+    assign out = outReg;
+    wire [DATA_SIZE-1:0] power = validBits == 0 ? 0 : (1 << validBits);
+    wire [DATA_SIZE-1:0] validMask = power-1;
+    
+    always @* begin
+        outReg = excludeLSB ? ((in[`DATA_SIZE-1:1] & validMask[`DATA_SIZE-1:1]) == validMask[`DATA_SIZE-1:1]) : ((in & validMask) == validMask);
+    end
+endmodule
+
+module busOutMux(input [`DATA_SIZE*2-1:0] instOut0, input [`DATA_SIZE*2-1:0] instOut1,
+                 input [1:0] validPart0, input [1:0] validPart1,
+                 input [`LG_DATA_SIZE:0] extraBitToSet0, input [`LG_DATA_SIZE:0] extraBitToSet1, 
+                 input [1:0] extraBitValue0, input [1:0] extraBitValue1,
+                 output [`DATA_SIZE*2-1:0] out);
+    reg [`DATA_SIZE*2-1:0] outReg;
+    reg [`DATA_SIZE*2-1:0] validMask;
+    
+    assign out[0]  = validMask[0]  ? outReg[0]  : 1'bz;
+    assign out[1]  = validMask[1]  ? outReg[1]  : 1'bz;
+    assign out[2]  = validMask[2]  ? outReg[2]  : 1'bz;
+    assign out[3]  = validMask[3]  ? outReg[3]  : 1'bz;
+    assign out[4]  = validMask[4]  ? outReg[4]  : 1'bz;
+    assign out[5]  = validMask[5]  ? outReg[5]  : 1'bz;
+    assign out[6]  = validMask[6]  ? outReg[6]  : 1'bz;
+    assign out[7]  = validMask[7]  ? outReg[7]  : 1'bz;
+    assign out[8]  = validMask[8]  ? outReg[8]  : 1'bz;
+    assign out[9]  = validMask[9]  ? outReg[9]  : 1'bz;
+    assign out[10] = validMask[10] ? outReg[10] : 1'bz;
+    assign out[11] = validMask[11] ? outReg[11] : 1'bz;
+    assign out[12] = validMask[12] ? outReg[12] : 1'bz;
+    assign out[13] = validMask[13] ? outReg[13] : 1'bz;
+    assign out[14] = validMask[14] ? outReg[14] : 1'bz;
+    assign out[15] = validMask[15] ? outReg[15] : 1'bz;
+    
+    always @* begin
+        validMask = 0;
+        outReg = 16'bxxxxxxxxxxxxxxxx;
+    
+        if (validPart0 == `VALID_PART_ALL) begin
+            outReg = instOut0;
+            validMask = 16'b1111111111111111;
+        end
+        if (validPart1 == `VALID_PART_ALL) begin
+            outReg = instOut1;
+            validMask = 16'b1111111111111111;
+        end
+    
+        if (validPart0 == `VALID_PART_HI) begin
+            outReg[`DATA_SIZE*2-1:`DATA_SIZE] = instOut0[`DATA_SIZE*2-1:`DATA_SIZE];
+            validMask = validMask | 16'b1111111100000000;
+        end
+        if (validPart1 == `VALID_PART_HI) begin
+            outReg[`DATA_SIZE*2-1:`DATA_SIZE] = instOut1[`DATA_SIZE*2-1:`DATA_SIZE];
+            validMask = validMask | 16'b1111111100000000;
+        end
+        
+        if (validPart0 == `VALID_PART_LO) begin
+            outReg[`DATA_SIZE-1:0] = instOut0[`DATA_SIZE-1:0];
+            validMask = validMask | 16'b0000000011111111;
+        end
+        if (validPart1 == `VALID_PART_LO) begin
+            outReg[`DATA_SIZE-1:0] = instOut1[`DATA_SIZE-1:0];
+            validMask = validMask | 16'b0000000011111111;
+        end
+        
+        if (extraBitValue0[1] == 1) begin
+            outReg[extraBitToSet0] = extraBitValue0[0];
+            validMask[extraBitToSet0] = 1;
+        end
+        if (extraBitValue1[1] == 1) begin
+            outReg[extraBitToSet1] = extraBitValue1[0];
+            validMask[extraBitToSet1] = 1;
+        end
     end
 endmodule
 
@@ -173,24 +323,54 @@ module instDecoder
     (input [`INST_SIZE-1:0] inst,
      input [7:0] isInputReadys,
      input [7:0] isOutputFulls,
-     input dataHiMatchTag, input dataLoIsZero, input predIsTrue, input [`DATA_SIZE-1:0] dataHiIn,
+     input aluIn0LoNotZero, input aluIn0LoIsAllOn, input aluIn0HiEqDataHi, 
+     input aluIn1LoNotZero, input aluIn1LoIsAllOn,
+     input dataLoIsZero, 
+     input [`DATA_SIZE-1:0] dataHiIn,
      output [7:0] readInputs,
      output [7:0] writeOutputs,
      output writeDataHi, output [`DATA_SIZE-1:0] dataHiOut,
      output writeDataLo, output [`DATA_SIZE-1:0] dataLoOut, output [1:0] dataLoSel,
-     output [2:0] aluIn0Sel, output [2:0] aluIn1Sel, output aluIn1FromData, output [3:0] aluFuncSel);
+     output [3:0] aluIn0Sel, output [3:0] aluIn1Sel, output [3:0] aluFuncSel,
+     output [2:0] aluIn0LoValidBits, output [2:0] aluIn1LoValidBits,
+     output aluIn0LoExcludeLSB, output aluIn1LoExcludeLSB,
+     output [1:0][1:0] busValidPart, output [1:0][`LG_DATA_SIZE:0] busExtraBitToSet, output [1:0][1:0] busExtraBitValue);
     
-    reg [7:0] readInputs;
-    reg [7:0] writeOutputs;
-    reg writeDataHi;
-    reg writeDataLo;
-    reg [`DATA_SIZE-1:0] dataHiOut;
-    reg [`DATA_SIZE-1:0] dataLoOut;
-    reg [1:0] dataLoSel;
-    reg [2:0] aluIn0Sel;
-    reg [2:0] aluIn1Sel;
-    reg aluIn1FromData;
-    reg [3:0] aluFuncSel;
+    reg [7:0] readInputsReg;
+    reg [7:0] writeOutputsReg;
+    reg writeDataHiReg;
+    reg writeDataLoReg;
+    reg [`DATA_SIZE-1:0] dataHiOutReg;
+    reg [`DATA_SIZE-1:0] dataLoOutReg;
+    reg [1:0] dataLoSelReg;
+    reg [3:0] aluIn0SelReg;
+    reg [3:0] aluIn1SelReg;
+    reg [3:0] aluFuncSelReg;
+    reg [2:0] aluIn0LoValidBitsReg;
+    reg [2:0] aluIn1LoValidBitsReg;
+    reg aluIn0LoExcludeLSBReg;
+    reg aluIn1LoExcludeLSBReg;
+    reg [1:0][1:0] busValidPartReg;
+    reg [1:0][`LG_DATA_SIZE:0] busExtraBitToSetReg;
+    reg [1:0][1:0] busExtraBitValueReg;
+    
+    assign readInputs = readInputsReg;
+    assign writeOutputs = writeOutputsReg;
+    assign writeDataHi = writeDataHiReg;
+    assign writeDataLo = writeDataLoReg;
+    assign dataHiOut = dataHiOutReg;
+    assign dataLoOut = dataLoOutReg;
+    assign dataLoSel = dataLoSelReg;
+    assign aluIn0Sel = aluIn0SelReg;
+    assign aluIn1Sel = aluIn1SelReg;
+    assign aluFuncSel = aluFuncSelReg;
+    assign aluIn0LoValidBits = aluIn0LoValidBitsReg;
+    assign aluIn1LoValidBits = aluIn1LoValidBitsReg;
+    assign aluIn0LoExcludeLSB = aluIn0LoExcludeLSBReg;
+    assign aluIn1LoExcludeLSB = aluIn1LoExcludeLSBReg;
+    assign busValidPart = busValidPartReg;
+    assign busExtraBitToSet = busExtraBitToSetReg;
+    assign busExtraBitValue = busExtraBitValueReg;
     
     wire [ 5:0]  op;
     wire [13:0] imm;
@@ -204,203 +384,209 @@ module instDecoder
     wire [3:0] delay = distFar - distNear;
     
     always @* begin    
-        readInputs = {1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0};
-        writeOutputs = {1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0};
-        writeDataHi = 1'b0;
-        writeDataLo = 1'b0;
-        dataHiOut = 8'bxxxxxxxx;
-        dataLoOut = 8'bxxxxxxxx;
-        dataLoSel = 2'bxx;
-        aluIn0Sel = 3'bxxx;
-        aluIn1Sel = 3'bxxx;
-        aluIn1FromData = 1'bx;
-        aluFuncSel = 3'bxxx;
+        readInputsReg = {1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0};
+        writeOutputsReg = {1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0};
+        writeDataHiReg = 1'b0;
+        writeDataLoReg = 1'b0;
+        dataHiOutReg = 8'bxxxxxxxx;
+        dataLoOutReg = 8'bxxxxxxxx;
+        dataLoSelReg = 2'bxx;
+        aluIn0SelReg = 4'bxxxx;
+        aluIn1SelReg = 4'bxxxx;
+        aluFuncSelReg = 3'bxxx;
+        busValidPartReg[0] = 2'b00;
+        busValidPartReg[1] = 2'b00;
+        busExtraBitToSetReg[0] = 4'bxxxx;
+        busExtraBitToSetReg[1] = 4'bxxxx;
+        busExtraBitValueReg[0] = 2'b0x;
+        busExtraBitValueReg[1] = 2'b0x;
+        
+        /* This is number of valid bits, which is default to 8
+           however, these wires has only 3 bits, so just set to 0 */
+        aluIn0LoValidBitsReg = 0;
+        aluIn1LoValidBitsReg = 0;
+        aluIn0LoExcludeLSBReg = 0;
+        aluIn1LoExcludeLSBReg = 0;
     
         case (op)
             `OP_NOP: begin
             end
             `OP_DISCARD: begin
-                aluFuncSel = `ALU_FUNC_IN1;
+                aluFuncSelReg = `ALU_FUNC_IN1;
                 if (isInputReadys[arg0])
-                    readInputs[arg0] = 1;
+                    readInputsReg[arg0] = 1;
                 if (isInputReadys[arg1])
-                    readInputs[arg1] = 1;
+                    readInputsReg[arg1] = 1;
                 if (isInputReadys[arg2])
-                    readInputs[arg2] = 1;
+                    readInputsReg[arg2] = 1;
                 if (isInputReadys[arg3])
-                    readInputs[arg3] = 1;
+                    readInputsReg[arg3] = 1;
             end
             `OP_MOV1_2: begin
-                aluIn1Sel = arg0;
-                aluIn1FromData = 0;
-                aluFuncSel = `ALU_FUNC_IN1;
+                aluIn1SelReg = arg0;
+                aluFuncSelReg = `ALU_FUNC_IN1;
                 if (isInputReadys[arg0] && !isOutputFulls[arg1] && !isOutputFulls[arg2]) begin
-                    readInputs[arg0] = 1;
-                    writeOutputs[arg1] = 1;
-                    writeOutputs[arg2] = 1;
+                    readInputsReg[arg0] = 1;
+                    writeOutputsReg[arg1] = 1;
+                    writeOutputsReg[arg2] = 1;
                 end
             end
             `OP_MOV2_1: begin
-                dataHiOut = dataHiIn;
-                writeDataHi = 1;
+                dataHiOutReg = dataHiIn;
+                writeDataHiReg = 1;
                 if (isOutputFulls[arg2]) begin
                     $display("Tag matching unit jammed in %m\n");
                     $finish;
                 end
                 if (isInputReadys[arg1] && !isOutputFulls[arg2]) begin
-                    aluIn1Sel = arg1;
-                    aluIn1FromData = 0;
-                    aluFuncSel = `ALU_FUNC_IN1;
-                    readInputs[arg1] = 1;
-                    writeOutputs[arg2] = 1;
+                    aluIn1SelReg = arg1;
+                    aluFuncSelReg = `ALU_FUNC_IN1;
+                    readInputsReg[arg1] = 1;
+                    writeOutputsReg[arg2] = 1;
                 end
                 else if (isInputReadys[arg0] && !isOutputFulls[arg2]) begin
-                    aluIn1Sel = arg0;
-                    aluIn1FromData = 0;
-                    aluFuncSel = `ALU_FUNC_IN1;
-                    readInputs[arg0] = 1;
-                    writeOutputs[arg2] = 1;
+                    aluIn1SelReg = arg0;
+                    aluFuncSelReg = `ALU_FUNC_IN1;
+                    readInputsReg[arg0] = 1;
+                    writeOutputsReg[arg2] = 1;
                 end
             end
             `OP_ADD: begin
                 if (isInputReadys[arg0] && isInputReadys[arg1] && !isOutputFulls[arg2]) begin
-                    aluIn0Sel = arg0;
-                    aluIn1Sel = arg1;
-                    aluIn1FromData = 0;
-                    aluFuncSel = `ALU_FUNC_ADD;
-                    readInputs[arg0] = 1;
-                    readInputs[arg1] = 1;
-                    writeOutputs[arg2] = 1;
+                    aluIn0SelReg = arg0;
+                    aluIn1SelReg = arg1;
+                    aluFuncSelReg = `ALU_FUNC_ADD;
+                    readInputsReg[arg0] = 1;
+                    readInputsReg[arg1] = 1;
+                    writeOutputsReg[arg2] = 1;
                 end
             end
             `OP_AND: begin
                 if (isInputReadys[arg0] && isInputReadys[arg1] && !isOutputFulls[arg2]) begin
-                    aluIn0Sel = arg0;
-                    aluIn1Sel = arg1;
-                    aluIn1FromData = 0;
-                    aluFuncSel = `ALU_FUNC_AND;
-                    readInputs[arg0] = 1;
-                    readInputs[arg1] = 1;
-                    writeOutputs[arg2] = 1;
+                    aluIn0SelReg = arg0;
+                    aluIn1SelReg = arg1;
+                    aluFuncSelReg = `ALU_FUNC_AND;
+                    readInputsReg[arg0] = 1;
+                    readInputsReg[arg1] = 1;
+                    writeOutputsReg[arg2] = 1;
                 end
             end
             `OP_SYNC: begin
-                dataHiOut = dataHiIn;
-                writeDataHi = 1;
-                aluIn1Sel = arg0;
-                aluIn1FromData = 0;
-                aluFuncSel = `ALU_FUNC_IN1;
+                dataHiOutReg = dataHiIn;
+                writeDataHiReg = 1;
+                aluIn1SelReg = arg0;
+                aluFuncSelReg = `ALU_FUNC_IN1;
                 case (dataHiIn)
                     `STATE_INIT: begin
                         if (isInputReadys[arg0] && isInputReadys[arg1] && isInputReadys[arg2] && delay == 0) begin
-                            dataHiOut = `STATE_WAIT_ARRIVE;
-                            dataLoOut = distFar - 1;
-                            writeDataLo = 1;
-                            dataLoSel = `DATA_SEL_DECODE;
-                            readInputs[arg1] = 1;
-                            readInputs[arg2] = 1;
-                            writeOutputs[arg1] = 1;
-                            writeOutputs[arg2] = 1;
+                            dataHiOutReg = `STATE_WAIT_ARRIVE;
+                            dataLoOutReg = distFar - 1;
+                            writeDataLoReg = 1;
+                            dataLoSelReg = `DATA_SEL_DECODE;
+                            readInputsReg[arg1] = 1;
+                            readInputsReg[arg2] = 1;
+                            writeOutputsReg[arg1] = 1;
+                            writeOutputsReg[arg2] = 1;
                         end
                         else if (isInputReadys[arg0] && (isInputReadys[arg1] || distNear==0) && (!isInputReadys[arg2] || delay>0)) begin
-                            dataHiOut = `STATE_ALREADY_FWD_FAR;
-                            readInputs[arg1] = isInputReadys[arg1];
-                            writeOutputs[arg2] = 1;
+                            dataHiOutReg = `STATE_ALREADY_FWD_FAR;
+                            readInputsReg[arg1] = isInputReadys[arg1];
+                            writeOutputsReg[arg2] = 1;
                         end
                         else if (isInputReadys[arg0] && !(isInputReadys[arg1] || distNear==0) && isInputReadys[arg2]) begin
-                            dataHiOut = `STATE_ALREADY_FWD_NEAR;
-                            readInputs[arg2] = 1;
-                            writeOutputs[arg1] = 1;
+                            dataHiOutReg = `STATE_ALREADY_FWD_NEAR;
+                            readInputsReg[arg2] = 1;
+                            writeOutputsReg[arg1] = 1;
                         end
                     end
                     `STATE_ALREADY_FWD_NEAR: begin
                         if (isInputReadys[arg1]) begin
-                            dataHiOut = `STATE_WAIT_ARRIVE;
-                            dataLoOut = distFar - 1;
-                            writeDataLo = 1;
-                            dataLoSel = `DATA_SEL_DECODE;
-                            readInputs[arg1] = 1;
-                            writeOutputs[arg2] = 1;
+                            dataHiOutReg = `STATE_WAIT_ARRIVE;
+                            dataLoOutReg = distFar - 1;
+                            writeDataLoReg = 1;
+                            dataLoSelReg = `DATA_SEL_DECODE;
+                            readInputsReg[arg1] = 1;
+                            writeOutputsReg[arg2] = 1;
                         end
                     end
                     `STATE_ALREADY_FWD_FAR: begin
                         if (isInputReadys[arg2] && delay<=1 && distNear==0) begin
                             if (!isOutputFulls[arg3]) begin
-                                dataHiOut = `STATE_INIT;
-                                readInputs[arg0] = 1;
-                                readInputs[arg2] = 1;
-                                writeOutputs[arg3] = 1;
+                                dataHiOutReg = `STATE_INIT;
+                                readInputsReg[arg0] = 1;
+                                readInputsReg[arg2] = 1;
+                                writeOutputsReg[arg3] = 1;
                             end
                         end
                         else if (isInputReadys[arg2] && delay<=1 && distNear>0) begin
-                            dataHiOut = `STATE_WAIT_ARRIVE;
-                            dataLoOut = distNear - 1;
-                            writeDataLo = 1;
-                            dataLoSel = `DATA_SEL_DECODE;
-                            readInputs[arg2] = 1;
-                            writeOutputs[arg1] = 1;
+                            dataHiOutReg = `STATE_WAIT_ARRIVE;
+                            dataLoOutReg = distNear - 1;
+                            writeDataLoReg = 1;
+                            dataLoSelReg = `DATA_SEL_DECODE;
+                            readInputsReg[arg2] = 1;
+                            writeOutputsReg[arg1] = 1;
                         end
                         else if (isInputReadys[arg2] && delay>1) begin
-                            dataHiOut = `STATE_DELAY_FWD_NEAR;
-                            dataLoOut = delay - 2;
-                            writeDataLo = 1;
-                            dataLoSel = `DATA_SEL_DECODE;
+                            dataHiOutReg = `STATE_DELAY_FWD_NEAR;
+                            dataLoOutReg = delay - 2;
+                            writeDataLoReg = 1;
+                            dataLoSelReg = `DATA_SEL_DECODE;
                         end
                         else begin
-                            dataHiOut = `STATE_DONT_DELAY_FWD;
+                            dataHiOutReg = `STATE_DONT_DELAY_FWD;
                         end
                     end
                     `STATE_DELAY_FWD_NEAR: begin
                         if (dataLoIsZero && distNear>0) begin
-                            dataHiOut = `STATE_WAIT_ARRIVE;
-                            dataLoOut = distNear - 1;
-                            writeDataLo = 1;
-                            dataLoSel = `DATA_SEL_DECODE;
-                            readInputs[arg2] = 1;
-                            writeOutputs[arg1] = 1;
+                            dataHiOutReg = `STATE_WAIT_ARRIVE;
+                            dataLoOutReg = distNear - 1;
+                            writeDataLoReg = 1;
+                            dataLoSelReg = `DATA_SEL_DECODE;
+                            readInputsReg[arg2] = 1;
+                            writeOutputsReg[arg1] = 1;
                         end
                         else if (dataLoIsZero && distNear==0) begin
                             if (!isOutputFulls[arg3]) begin
-                                dataHiOut = `STATE_INIT;
-                                readInputs[arg0] = 1;
-                                readInputs[arg2] = 1;
-                                writeOutputs[arg3] = 1;
+                                dataHiOutReg = `STATE_INIT;
+                                readInputsReg[arg0] = 1;
+                                readInputsReg[arg2] = 1;
+                                writeOutputsReg[arg3] = 1;
                             end
                         end
                         else begin
-                            writeDataLo = 1;
-                            dataLoSel = `DATA_SEL_DEC;
+                            writeDataLoReg = 1;
+                            dataLoSelReg = `DATA_SEL_DEC;
                         end
                     end
                     `STATE_DONT_DELAY_FWD: begin
                         if (isInputReadys[arg2] && distNear>0) begin
-                            dataHiOut = `STATE_WAIT_ARRIVE;
-                            dataLoOut = distNear - 1;
-                            writeDataLo = 1;
-                            dataLoSel = `DATA_SEL_DECODE;
-                            readInputs[arg2] = 1;
-                            writeOutputs[arg1] = 1;
+                            dataHiOutReg = `STATE_WAIT_ARRIVE;
+                            dataLoOutReg = distNear - 1;
+                            writeDataLoReg = 1;
+                            dataLoSelReg = `DATA_SEL_DECODE;
+                            readInputsReg[arg2] = 1;
+                            writeOutputsReg[arg1] = 1;
                         end
                         else if (isInputReadys[arg2] && distNear==0) begin
                             if (!isOutputFulls[arg3]) begin
-                                dataHiOut = `STATE_INIT;
-                                readInputs[arg0] = 1;
-                                readInputs[arg2] = 1;
-                                writeOutputs[arg3] = 1;
+                                dataHiOutReg = `STATE_INIT;
+                                readInputsReg[arg0] = 1;
+                                readInputsReg[arg2] = 1;
+                                writeOutputsReg[arg3] = 1;
                             end
                         end
                     end
                     `STATE_WAIT_ARRIVE: begin
                         if (dataLoIsZero) begin
                             if (!isOutputFulls[arg3]) begin
-                                dataHiOut = `STATE_INIT;
-                                readInputs[arg0] = 1;
-                                writeOutputs[arg3] = 1;
+                                dataHiOutReg = `STATE_INIT;
+                                readInputsReg[arg0] = 1;
+                                writeOutputsReg[arg3] = 1;
                             end
                         end
                         else begin
-                            writeDataLo = 1;
-                            dataLoSel = `DATA_SEL_DEC;
+                            writeDataLoReg = 1;
+                            dataLoSelReg = `DATA_SEL_DEC;
                         end
                     end
                     default: begin
@@ -410,184 +596,355 @@ module instDecoder
                 endcase
             end
             `OP_SWITCH_PRED: begin
-                aluIn0Sel = arg1;   // This is used to produce predIsTrue
+                aluIn0SelReg = arg1;   // This is used to produce aluIn0LoNotZero
                 if (isInputReadys[arg0] && isInputReadys[arg1]) begin
-                    aluIn1Sel = arg0;
-                    aluIn1FromData = 0;
-                    aluFuncSel = `ALU_FUNC_IN1;
-                    if (predIsTrue && !isOutputFulls[arg2]) begin
-                        readInputs[arg0] = 1;
-                        readInputs[arg1] = 1;
-                        writeOutputs[arg2] = 1;
+                    aluIn1SelReg = arg0;
+                    aluFuncSelReg = `ALU_FUNC_IN1;
+                    if (aluIn0LoNotZero && !isOutputFulls[arg2]) begin
+                        readInputsReg[arg0] = 1;
+                        readInputsReg[arg1] = 1;
+                        writeOutputsReg[arg2] = 1;
                     end
-                    else if (!predIsTrue && !isOutputFulls[arg3]) begin
-                        readInputs[arg0] = 1;
-                        readInputs[arg1] = 1;
-                        writeOutputs[arg3] = 1;
+                    else if (!aluIn0LoNotZero && !isOutputFulls[arg3]) begin
+                        readInputsReg[arg0] = 1;
+                        readInputsReg[arg1] = 1;
+                        writeOutputsReg[arg3] = 1;
                     end
                 end
             end
             `OP_SWITCH_TAG: begin
                 if (isInputReadys[arg1] && !isOutputFulls[arg3]) begin
-                    aluIn1Sel = arg1;
-                    aluIn1FromData = 0;
-                    aluFuncSel = `ALU_FUNC_IN1;
-                    readInputs[arg1] = 1;
-                    writeOutputs[arg3] = 1;
+                    aluIn1SelReg = arg1;
+                    aluFuncSelReg = `ALU_FUNC_IN1;
+                    readInputsReg[arg1] = 1;
+                    writeOutputsReg[arg3] = 1;
                 end
                 else if (isInputReadys[arg0]) begin
-                    aluIn1Sel = arg0;
-                    aluIn1FromData = 0;
-                    aluFuncSel = `ALU_FUNC_IN1;
-                    if (dataHiMatchTag && !isOutputFulls[arg2]) begin
-                        readInputs[arg0] = 1;
-                        writeOutputs[arg2] = 1;
+                    aluIn0SelReg = arg0;
+                    aluIn1SelReg = arg0;
+                    aluFuncSelReg = `ALU_FUNC_IN1;
+                    if (aluIn0HiEqDataHi && !isOutputFulls[arg2]) begin
+                        readInputsReg[arg0] = 1;
+                        writeOutputsReg[arg2] = 1;
                     end
-                    else if (!dataHiMatchTag && !isOutputFulls[arg3]) begin
-                        readInputs[arg0] = 1;
-                        writeOutputs[arg3] = 1;
+                    else if (!aluIn0HiEqDataHi && !isOutputFulls[arg3]) begin
+                        readInputsReg[arg0] = 1;
+                        writeOutputsReg[arg3] = 1;
                     end
                 end
             end
             `OP_COMBINE_TAG: begin
                 if (isInputReadys[arg0] && isInputReadys[arg1] && !isOutputFulls[arg2]) begin
-                    aluIn0Sel = arg0;
-                    aluIn1Sel = arg1;
-                    aluIn1FromData = 0;
-                    aluFuncSel = `ALU_FUNC_1H_0H;
-                    readInputs[arg0] = 1;
-                    readInputs[arg1] = 1;
-                    writeOutputs[arg2] = 1;
+                    aluIn0SelReg = arg0;
+                    aluIn1SelReg = arg1;
+                    aluFuncSelReg = `ALU_FUNC_1H_0H;
+                    readInputsReg[arg0] = 1;
+                    readInputsReg[arg1] = 1;
+                    writeOutputsReg[arg2] = 1;
                 end
             end
             `OP_NEW_TAG: begin
                 if (isInputReadys[arg0] && isInputReadys[arg1] && !isOutputFulls[arg2]) begin
-                    aluIn0Sel = arg0;
-                    aluIn1Sel = arg1;
-                    aluIn1FromData = 0;
-                    aluFuncSel = `ALU_FUNC_1H_0L;
-                    readInputs[arg0] = 1;
-                    readInputs[arg1] = 1;
-                    writeOutputs[arg2] = 1;
+                    aluIn0SelReg = arg0;
+                    aluIn1SelReg = arg1;
+                    aluFuncSelReg = `ALU_FUNC_1H_0L;
+                    readInputsReg[arg0] = 1;
+                    readInputsReg[arg1] = 1;
+                    writeOutputsReg[arg2] = 1;
                 end
             end
             `OP_STORE_TAG: begin
-                aluIn1Sel = arg0;   // This is used to produce dataHiMatchTag
+                aluIn0SelReg = arg0;   // This is used to produce aluIn0HiEqDataHi
+                aluIn1SelReg = arg0;
                 if (isInputReadys[arg0] && !isOutputFulls[arg1]) begin
-                    aluIn1FromData = 0;
-                    aluFuncSel = `ALU_FUNC_IN1;
-                    readInputs[arg0] = 1;
-                    writeOutputs[arg1] = 1;
-                    if (dataHiMatchTag) begin
-                        dataLoSel = `DATA_SEL_TOKEN;
-                        writeDataLo = 1;
+                    aluFuncSelReg = `ALU_FUNC_IN1;
+                    readInputsReg[arg0] = 1;
+                    writeOutputsReg[arg1] = 1;
+                    if (aluIn0HiEqDataHi) begin
+                        dataLoSelReg = `DATA_SEL_ALUIN0;
+                        writeDataLoReg = 1;
                     end
                 end
             end
             `OP_RESTORE_TAG: begin
-                aluIn1Sel = arg0;   // This is used to produce dataHiMatchTag
+                aluIn0SelReg = arg0;   // This is used to produce aluIn0HiEqDataHi
                 if (isInputReadys[arg0] && !isOutputFulls[arg1]) begin
-                    readInputs[arg0] = 1;
-                    writeOutputs[arg1] = 1;
-                    if (dataHiMatchTag) begin
-                        aluIn0Sel = arg0;
-                        aluIn1FromData = 1;
-                        aluFuncSel = `ALU_FUNC_1L_0L;
+                    readInputsReg[arg0] = 1;
+                    writeOutputsReg[arg1] = 1;
+                    if (aluIn0HiEqDataHi) begin
+                        aluIn1SelReg = `ALU_IN_SEL_DATA;
+                        aluFuncSelReg = `ALU_FUNC_1L_0L;
                     end
                     else begin
-                        aluIn1FromData = 0;
-                        aluFuncSel = `ALU_FUNC_IN1;
+                        aluIn1SelReg = arg0;
+                        aluFuncSelReg = `ALU_FUNC_IN1;
                     end
                 end
             end
             `OP_LOOP_HEAD: begin
-                aluIn0Sel = arg1;   // This is used to produce predIsTrue
-                if (isInputReadys[arg1] && !predIsTrue) begin
-                    dataLoSel = `DATA_SEL_INC;
-                    writeDataLo = 1;
-                    readInputs[arg1] = 1;
+                aluIn0SelReg = arg1;   // This is used to produce aluIn0LoNotZero
+                if (isInputReadys[arg1] && !aluIn0LoNotZero) begin
+                    dataLoSelReg = `DATA_SEL_INC;
+                    writeDataLoReg = 1;
+                    readInputsReg[arg1] = 1;
                 end
-                if (isInputReadys[arg1] && predIsTrue && isInputReadys[arg2] && !isOutputFulls[arg3]) begin
-                    aluIn1Sel = arg2;
-                    aluIn1FromData = 0;
-                    aluFuncSel = `ALU_FUNC_IN1;
-                    readInputs[arg1] = 1;
-                    readInputs[arg2] = 1;
-                    writeOutputs[arg3] = 1;
+                if (isInputReadys[arg1] && aluIn0LoNotZero && isInputReadys[arg2] && !isOutputFulls[arg3]) begin
+                    aluIn1SelReg = arg2;
+                    aluFuncSelReg = `ALU_FUNC_IN1;
+                    readInputsReg[arg1] = 1;
+                    readInputsReg[arg2] = 1;
+                    writeOutputsReg[arg3] = 1;
                 end
                 else if (isInputReadys[arg0] && !dataLoIsZero && !isOutputFulls[arg3]) begin
-                    dataLoSel = `DATA_SEL_DEC;
-                    writeDataLo = 1;
-                    aluIn1Sel = arg0;
-                    aluIn1FromData = 0;
-                    aluFuncSel = `ALU_FUNC_IN1;
-                    readInputs[arg0] = 1;
-                    writeOutputs[arg3] = 1;
+                    dataLoSelReg = `DATA_SEL_DEC;
+                    writeDataLoReg = 1;
+                    aluIn1SelReg = arg0;
+                    aluFuncSelReg = `ALU_FUNC_IN1;
+                    readInputsReg[arg0] = 1;
+                    writeOutputsReg[arg3] = 1;
                 end
             end
             `OP_INV_DATA: begin
                 if (isInputReadys[arg0] && !isOutputFulls[arg1]) begin
-                    aluIn0Sel = arg0;
-                    aluIn1FromData = 1;
-                    aluFuncSel = `ALU_FUNC_0H_1L;
-                    readInputs[arg0] = 1;
-                    writeOutputs[arg1] = 1;
+                    aluIn0SelReg = arg0;
+                    aluIn1SelReg = `ALU_IN_SEL_DATA;
+                    aluFuncSelReg = `ALU_FUNC_0H_1L;
+                    readInputsReg[arg0] = 1;
+                    writeOutputsReg[arg1] = 1;
                 end
             end
             `OP_ADD_DATA: begin
                 if (isInputReadys[arg0] && !isOutputFulls[arg1]) begin
-                    aluIn0Sel = arg0;
-                    aluIn1FromData = 1;
-                    aluFuncSel = `ALU_FUNC_ADD;
-                    readInputs[arg0] = 1;
-                    writeOutputs[arg1] = 1;
+                    aluIn0SelReg = arg0;
+                    aluIn1SelReg = `ALU_IN_SEL_DATA;
+                    aluFuncSelReg = `ALU_FUNC_ADD;
+                    readInputsReg[arg0] = 1;
+                    writeOutputsReg[arg1] = 1;
                 end
             end
             `OP_LT_DATA: begin
                 if (isInputReadys[arg0] && !isOutputFulls[arg1]) begin
-                    aluIn0Sel = arg0;
-                    aluIn1FromData = 1;
-                    aluFuncSel = `ALU_FUNC_LT;
-                    readInputs[arg0] = 1;
-                    writeOutputs[arg1] = 1;
+                    aluIn0SelReg = arg0;
+                    aluIn1SelReg = `ALU_IN_SEL_DATA;
+                    aluFuncSelReg = `ALU_FUNC_LT;
+                    readInputsReg[arg0] = 1;
+                    writeOutputsReg[arg1] = 1;
                 end
             end
             `OP_EQ_DATA: begin
                 if (isInputReadys[arg0] && !isOutputFulls[arg1]) begin
-                    aluIn0Sel = arg0;
-                    aluIn1FromData = 1;
-                    aluFuncSel = `ALU_FUNC_EQ;
-                    readInputs[arg0] = 1;
-                    writeOutputs[arg1] = 1;
+                    aluIn0SelReg = arg0;
+                    aluIn1SelReg = `ALU_IN_SEL_DATA;
+                    aluFuncSelReg = `ALU_FUNC_EQ;
+                    readInputsReg[arg0] = 1;
+                    writeOutputsReg[arg1] = 1;
                 end
             end
             `OP_NE_DATA: begin
                 if (isInputReadys[arg0] && !isOutputFulls[arg1]) begin
-                    aluIn0Sel = arg0;
-                    aluIn1FromData = 1;
-                    aluFuncSel = `ALU_FUNC_NE;
-                    readInputs[arg0] = 1;
-                    writeOutputs[arg1] = 1;
+                    aluIn0SelReg = arg0;
+                    aluIn1SelReg = `ALU_IN_SEL_DATA;
+                    aluFuncSelReg = `ALU_FUNC_NE;
+                    readInputsReg[arg0] = 1;
+                    writeOutputsReg[arg1] = 1;
                 end
             end
             `OP_ST: begin
                 if (isInputReadys[arg0] && isInputReadys[arg1] && !isOutputFulls[arg2]) begin
-                    aluIn0Sel = arg0;
-                    aluIn1Sel = arg1;
-                    aluIn1FromData = 0;
-                    aluFuncSel = `ALU_FUNC_ST;
-                    readInputs[arg0] = 1;
-                    readInputs[arg1] = 1;
-                    writeOutputs[arg2] = 1;
+                    aluIn0SelReg = arg0;
+                    aluIn1SelReg = arg1;
+                    aluFuncSelReg = `ALU_FUNC_ST;
+                    readInputsReg[arg0] = 1;
+                    readInputsReg[arg1] = 1;
+                    writeOutputsReg[arg2] = 1;
                 end
             end
-            default: begin
-                $display("Illegal opcode in %m\n");
-                $finish;
+            // tok_to_bus  imm_n, in, sig_bus, out_bus
+            `OP_TOK_TO_BUS: begin
+                busExtraBitToSetReg[arg1] = imm;
+                aluIn0SelReg = {1'b1, arg1};    // Indicates to select bus instead of FIFO
+                aluIn0LoValidBitsReg = 1;          // Used to detect signal bus[0]
+                aluFuncSelReg = `ALU_FUNC_IN1;
+                if (isInputReadys[arg0]) begin
+                    busExtraBitValueReg[arg1] = 2'b11;
+                    if (aluIn0LoIsAllOn) begin
+                        aluIn1SelReg = arg0;
+                        busValidPartReg[arg2] = `VALID_PART_ALL;
+                        readInputsReg[arg0] = 1;
+                    end
+                end
+                else begin
+                    busExtraBitValueReg[arg1] = 2'b10;
+                    /* Should still send something even if no token available
+                       otherwise the listener of the bus may get random results */
+                    if (aluIn0LoIsAllOn) begin
+                        aluIn1SelReg = `ALU_IN_SEL_DATA;
+                        busValidPartReg[arg2] = `VALID_PART_ALL;
+                    end
+                end
+            end
+            // bus_to_tok  imm_n, in_bus, sig_bus, out
+            `OP_BUS_TO_TOK: begin
+                busExtraBitToSetReg[arg1] = imm;
+                aluIn0SelReg = {1'b1, arg1};    // Indicates to select bus instead of FIFO
+                aluIn0LoValidBitsReg = 1;          // Used to detect signal bus[0]
+                aluIn1SelReg = {1'b1, arg0};
+                aluFuncSelReg = `ALU_FUNC_IN1;
+                if (!isOutputFulls[arg2]) begin
+                    busExtraBitValueReg[arg1] = 2'b11;
+                    if (aluIn0LoIsAllOn)
+                        writeOutputsReg[arg2] = 1;
+                end
+                else
+                    busExtraBitValueReg[arg1] = 2'b10;
+            end
+            // bus_and_bit imm_n1, imm_n2, in_bus, out_bus
+            `OP_BUS_AND_BIT: begin
+                busExtraBitToSetReg[arg1] = imm[3:0];
+                aluIn0SelReg = {1'b1, arg0};
+                aluIn0LoValidBitsReg = imm[6:4];
+                aluIn0LoExcludeLSBReg = imm[8];
+                if (aluIn0LoIsAllOn)
+                    busExtraBitValueReg[arg1] = 2'b11;
+                else
+                    busExtraBitValueReg[arg1] = 2'b10;
+            end
+            `OP_BUS_OR_BIT: begin
+                busExtraBitToSetReg[arg1] = imm[3:0];
+                aluIn0SelReg = {1'b1, arg0};
+                aluIn0LoValidBitsReg = imm[6:4];
+                aluIn0LoExcludeLSBReg = imm[8];
+                if (aluIn0LoNotZero)
+                    busExtraBitValueReg[arg1] = 2'b11;
+                else
+                    busExtraBitValueReg[arg1] = 2'b10;
+            end
+            `OP_BUS_NAND_BIT: begin
+                busExtraBitToSetReg[arg1] = imm[3:0];
+                aluIn0SelReg = {1'b1, arg0};
+                aluIn0LoValidBitsReg = imm[6:4];
+                aluIn0LoExcludeLSBReg = imm[8];
+                if (aluIn0LoIsAllOn)
+                    busExtraBitValueReg[arg1] = 2'b10;
+                else
+                    busExtraBitValueReg[arg1] = 2'b11;
+            end
+            `OP_BUS_NOR_BIT: begin
+                busExtraBitToSetReg[arg1] = imm[3:0];
+                aluIn0SelReg = {1'b1, arg0};
+                aluIn0LoValidBitsReg = imm[6:4];
+                aluIn0LoExcludeLSBReg = imm[8];
+                if (aluIn0LoNotZero)
+                    busExtraBitValueReg[arg1] = 2'b10;
+                else
+                    busExtraBitValueReg[arg1] = 2'b11;
+            end
+            // tag_matcher imm_n, sig_bus, data_bus
+            `OP_TAG_MATCHER: begin
+                /* Use one bit of dataHiIn as the state */
+                if (dataHiIn[`DATA_SIZE-1] == 0) begin
+                    aluIn0SelReg = {1'b1, arg1};
+                    aluIn1SelReg = {1'b1, arg0};
+                    aluIn1LoValidBitsReg = 1;
+                    if (aluIn1LoNotZero == 0 && aluIn0HiEqDataHi == 1) begin
+                        writeDataHiReg = 1;
+                        dataHiOutReg = {1'b1, dataHiIn[`DATA_SIZE-2:0]};
+                        writeDataLoReg = 1;
+                        dataLoSelReg = `DATA_SEL_ALUIN0;
+                    end
+                end
+                else begin
+                    busExtraBitToSetReg[arg0] = imm;
+                    busExtraBitValueReg[arg0] = 2'b11;
+                    aluIn0SelReg = {1'b1, arg0};
+                    aluIn1SelReg = `ALU_IN_SEL_DATA;
+                    aluFuncSelReg = `ALU_FUNC_IN1;
+                    aluIn0LoValidBitsReg = 1;
+                    if (aluIn0LoNotZero == 1) begin
+                        busValidPartReg[arg1] = `VALID_PART_ALL;
+                        writeDataHiReg = 1;
+                        dataHiOutReg = {1'b0, dataHiIn[`DATA_SIZE-2:0]};
+                    end
+                end
+            end
+            // match_ctrl imm_n, imm_numInput, tag_sync_bus, out_sync_bus
+            `OP_MATCHER_CTRL: begin
+                aluIn0SelReg = {1'b1, arg0};
+                aluIn1SelReg = {1'b1, arg1};
+                aluIn0LoValidBitsReg = imm[6:4];
+                aluIn1LoValidBitsReg = imm[2:0];
+                aluIn0LoExcludeLSBReg = 1;
+                busExtraBitToSetReg[arg0] = 0;
+                busExtraBitToSetReg[arg1] = imm[3:0];
+                if (aluIn0LoIsAllOn == 1 && aluIn1LoNotZero == 0) begin
+                    busExtraBitValueReg[arg0] = 2'b11;
+                    busExtraBitValueReg[arg1] = 2'b11;
+                end
+                else begin
+                    busExtraBitValueReg[arg0] = 2'b10;
+                    busExtraBitValueReg[arg1] = 2'b10;
+                end
+            end
+            // store_tag2 in_bus, out_sig_bus
+            `OP_STORE_TAG2: begin
+                aluIn0SelReg = {1'b1, arg0};
+                aluIn1SelReg = `ALU_IN_SEL_DATA;
+                aluFuncSelReg = `ALU_FUNC_1L_0L;
+                busExtraBitToSetReg[arg1] = 0;
+                busExtraBitValueReg[arg1] = 2'b10;
+                if (dataHiIn[`DATA_SIZE-1] == 0) begin
+                    if (aluIn0HiEqDataHi) begin
+                        writeDataHiReg = 1;
+                        dataHiOutReg = {1'b1, dataHiIn[`DATA_SIZE-2:0]};
+                        writeDataLoReg = 1;
+                        dataLoSelReg = `DATA_SEL_ALUIN0;
+                    end
+                end
+                else begin
+                    if (aluIn0HiEqDataHi) begin
+                        busValidPartReg[arg1] = `VALID_PART_HI;
+                        busExtraBitValueReg[arg1] = 2'b11;
+                        writeDataHiReg = 1;
+                        dataHiOutReg = {1'b0, dataHiIn[`DATA_SIZE-2:0]};
+                    end
+                end
+            end
+            // restore_tag tag_in_bus, data_in_bus, out
+            `OP_RESTORE_TAG2: begin
+                aluIn0SelReg = {1'b1, arg1};
+                aluIn1SelReg = {1'b1, arg0};
+                aluFuncSelReg = `ALU_FUNC_1H_0H;
+                aluIn0LoValidBitsReg = 2;
+                aluIn1LoValidBitsReg = 2;
+                aluIn0LoExcludeLSBReg = 1;
+                busExtraBitToSetReg[arg0] = 0;
+                busExtraBitValueReg[arg0] = {1'b1, !aluIn0LoNotZero && !isOutputFulls[arg2]};
+                busExtraBitToSetReg[arg1] = 0;
+                if (aluIn1LoIsAllOn == 0) begin
+                    busExtraBitValueReg[arg1] = 2'b11;
+                end
+                else begin
+                    busExtraBitValueReg[arg1] = 2'b10;
+                    writeOutputsReg[arg2] = 1;
+                end
+            end
+            // bus_fwd_lh in_bus, out_bus
+            `OP_BUS_FWD_LH: begin
+                aluIn1SelReg = {1'b1, arg0};
+                aluFuncSelReg = `ALU_FUNC_1L_0L;
+                busValidPartReg[arg1] = `VALID_PART_HI;
+            end
+            // bus_cfwd_hi in_sig_bus, out_bus
+            `OP_BUS_CFWD_HI: begin
+                aluIn0SelReg = {1'b1, arg0};
+                aluIn0LoValidBitsReg = 1;
+                aluFuncSelReg = `ALU_FUNC_0H_1L;
+                if (aluIn0LoNotZero == 1) begin
+                    busValidPartReg[arg1] = `VALID_PART_HI;
+                end
             end
         endcase
     end
-    
 endmodule
 
 module alu(input [`DATA_SIZE*2-1:0] inData0,
@@ -595,36 +952,38 @@ module alu(input [`DATA_SIZE*2-1:0] inData0,
            input [3:0] funcSel,
            output [`DATA_SIZE*2-1:0] outData);
     
-    reg [`DATA_SIZE*2-1:0] outData;
+    reg [`DATA_SIZE*2-1:0] outDataReg;
+    
+    assign outData = outDataReg;
     
     always @(inData0, inData1, funcSel) begin
-        outData = 32'bx;
+        outDataReg = 32'bx;
         case (funcSel)
-            `ALU_FUNC_IN1:      outData = inData1;
-            `ALU_FUNC_ADD:      outData = {inData0[`DATA_SIZE*2-1:`DATA_SIZE], inData0[`DATA_SIZE-1:0] + inData1[`DATA_SIZE-1:0]};
-            `ALU_FUNC_MUL:      outData = {inData0[`DATA_SIZE*2-1:`DATA_SIZE], inData0[`DATA_SIZE-1:0] * inData1[`DATA_SIZE-1:0]};
-            `ALU_FUNC_AND:      outData = {inData0[`DATA_SIZE*2-1:`DATA_SIZE], inData0[`DATA_SIZE-1:0] & inData1[`DATA_SIZE-1:0]};
-            `ALU_FUNC_1H_0L:    outData = {inData1[`DATA_SIZE*2-1:`DATA_SIZE], inData0[`DATA_SIZE-1:0]};
-            `ALU_FUNC_1L_0L:    outData = {inData1[`DATA_SIZE-1:0],            inData0[`DATA_SIZE-1:0]};
-            `ALU_FUNC_1H_0H:    outData = {inData1[`DATA_SIZE*2-1:`DATA_SIZE], inData0[`DATA_SIZE*2-1:`DATA_SIZE]};
-            `ALU_FUNC_0H_1L:    outData = {inData0[`DATA_SIZE*2-1:`DATA_SIZE], inData1[`DATA_SIZE-1:0]};
+            `ALU_FUNC_IN1:      outDataReg = inData1;
+            `ALU_FUNC_ADD:      outDataReg = {inData0[`DATA_SIZE*2-1:`DATA_SIZE], inData0[`DATA_SIZE-1:0] + inData1[`DATA_SIZE-1:0]};
+            `ALU_FUNC_MUL:      outDataReg = {inData0[`DATA_SIZE*2-1:`DATA_SIZE], inData0[`DATA_SIZE-1:0] * inData1[`DATA_SIZE-1:0]};
+            `ALU_FUNC_AND:      outDataReg = {inData0[`DATA_SIZE*2-1:`DATA_SIZE], inData0[`DATA_SIZE-1:0] & inData1[`DATA_SIZE-1:0]};
+            `ALU_FUNC_1H_0L:    outDataReg = {inData1[`DATA_SIZE*2-1:`DATA_SIZE], inData0[`DATA_SIZE-1:0]};
+            `ALU_FUNC_1L_0L:    outDataReg = {inData1[`DATA_SIZE-1:0],            inData0[`DATA_SIZE-1:0]};
+            `ALU_FUNC_1H_0H:    outDataReg = {inData1[`DATA_SIZE*2-1:`DATA_SIZE], inData0[`DATA_SIZE*2-1:`DATA_SIZE]};
+            `ALU_FUNC_0H_1L:    outDataReg = {inData0[`DATA_SIZE*2-1:`DATA_SIZE], inData1[`DATA_SIZE-1:0]};
             `ALU_FUNC_LT: begin
-                outData = 0;
-                outData[`DATA_SIZE*2-1:`DATA_SIZE] = inData0[`DATA_SIZE*2-1:`DATA_SIZE];
-                outData[0] = inData0[`DATA_SIZE-1:0] < inData1[`DATA_SIZE-1:0] ? 1 : 0;
+                outDataReg = 0;
+                outDataReg[`DATA_SIZE*2-1:`DATA_SIZE] = inData0[`DATA_SIZE*2-1:`DATA_SIZE];
+                outDataReg[0] = inData0[`DATA_SIZE-1:0] < inData1[`DATA_SIZE-1:0] ? 1 : 0;
             end
             `ALU_FUNC_EQ: begin
-                outData = 0;
-                outData[`DATA_SIZE*2-1:`DATA_SIZE] = inData0[`DATA_SIZE*2-1:`DATA_SIZE];
-                outData[0] = inData0[`DATA_SIZE-1:0] == inData1[`DATA_SIZE-1:0] ? 1 : 0;
+                outDataReg = 0;
+                outDataReg[`DATA_SIZE*2-1:`DATA_SIZE] = inData0[`DATA_SIZE*2-1:`DATA_SIZE];
+                outDataReg[0] = inData0[`DATA_SIZE-1:0] == inData1[`DATA_SIZE-1:0] ? 1 : 0;
             end
             `ALU_FUNC_NE: begin
-                outData = 0;
-                outData[`DATA_SIZE*2-1:`DATA_SIZE] = inData0[`DATA_SIZE*2-1:`DATA_SIZE];
-                outData[0] = (inData0[`DATA_SIZE-1:0] != inData1[`DATA_SIZE-1:0]) ? 1 : 0;
+                outDataReg = 0;
+                outDataReg[`DATA_SIZE*2-1:`DATA_SIZE] = inData0[`DATA_SIZE*2-1:`DATA_SIZE];
+                outDataReg[0] = (inData0[`DATA_SIZE-1:0] != inData1[`DATA_SIZE-1:0]) ? 1 : 0;
             end
             `ALU_FUNC_ST: begin
-                outData = inData0;
+                outDataReg = inData0;
                 $display("Popcount of %d is %d", inData0[`DATA_SIZE-1:0], inData1[`DATA_SIZE-1:0]);
             end
         endcase
@@ -637,43 +996,8 @@ module pe2(input clk,
            output [7:0] readInDatas,
            output [7:0][`DATA_SIZE*2-1:0] outDatas,
            output [7:0] outDataReadys,
-           input [7:0] readOutDatas);
-     
-    /* The default op is to consume all inputs and produce no outputs */
-    
-    parameter OP0 = `OP_NOP;
-    parameter Imm0 = 0;
-    parameter Arg00 = `DIR_U0;
-    parameter Arg01 = `DIR_D0;
-    parameter Arg02 = `DIR_L0;
-    parameter Arg03 = `DIR_R0;
-    
-    parameter OP1 = `OP_NOP;
-    parameter Imm1 = 0;
-    parameter Arg10 = `DIR_U1;
-    parameter Arg11 = `DIR_D1;
-    parameter Arg12 = `DIR_L1;
-    parameter Arg13 = `DIR_R1;
-    
-    parameter DataLo = 0;
-    parameter DataHi = 0;
-    
-    parameter U0Tok0 = -1;
-    parameter U0Tok1 = -1;
-    parameter U1Tok0 = -1;
-    parameter U1Tok1 = -1;
-    parameter D0Tok0 = -1;
-    parameter D0Tok1 = -1;
-    parameter D1Tok0 = -1;
-    parameter D1Tok1 = -1;
-    parameter L0Tok0 = -1;
-    parameter L0Tok1 = -1;
-    parameter L1Tok0 = -1;
-    parameter L1Tok1 = -1;
-    parameter R0Tok0 = -1;
-    parameter R0Tok1 = -1;
-    parameter R1Tok0 = -1;
-    parameter R1Tok1 = -1;
+           input [7:0] readOutDatas,
+           inout [`DATA_SIZE*2-1:0] hBus, inout [`DATA_SIZE*2-1:0] vBus);
     
     reg [`INST_SIZE-1:0] insts [1:0];
     reg [`DATA_SIZE*2-1:0] storedData;
@@ -700,8 +1024,11 @@ module pe2(input clk,
     /* The signals for the two instruction */
     
     wire [`DATA_SIZE*2-1:0] aluOuts [1:0];
-    wire dataHiMatchTag [1:0];
-    wire predIsTrue [1:0];
+    wire aluIn0LoNotZero [1:0];
+    wire aluIn0LoIsAllOn [1:0];
+    wire aluIn0HiEqDataHi [1:0];
+    wire aluIn1LoNotZero [1:0];
+    wire aluIn1LoIsAllOn [1:0];
     wire [7:0] readInputs [1:0];
     wire [7:0] writeOutputs [1:0];
     wire writeDataHi [1:0];
@@ -709,79 +1036,86 @@ module pe2(input clk,
     wire [`DATA_SIZE-1:0] nextDataHi [1:0];
     wire [`DATA_SIZE-1:0] nextDataLo [1:0];
     wire [1:0] dataLoSel [1:0];
-    wire [2:0] aluIn0Sel [1:0];
-    wire [2:0] aluIn1Sel [1:0];
-    wire aluIn1FromData [1:0];
+    wire [3:0] aluIn0Sel [1:0];
+    wire [3:0] aluIn1Sel [1:0];
     wire [3:0] aluFuncSel [1:0];
+    wire [2:0] aluIn0LoValidBits [1:0];
+    wire [2:0] aluIn1LoValidBits [1:0];
+    wire aluIn0LoExcludeLSB [1:0];
+    wire aluIn1LoExcludeLSB [1:0];
+    wire [1:0][1:0] busValidPart [1:0];
+    wire [1:0][`LG_DATA_SIZE:0] busExtraBitToSet [1:0];
+    wire [1:0][1:0] busExtraBitValue [1:0];
     
     wire [`DATA_SIZE*2-1:0] aluIn0 [1:0];
     wire [`DATA_SIZE*2-1:0] aluIn1 [1:0];
-    wire [`DATA_SIZE*2-1:0] aluIn1Temp [1:0];
     
-    wire [`DATA_SIZE-1:0] tagFromToken [1:0];
-    wire [`DATA_SIZE-1:0] tagToStore [1:0];
-    wire [`DATA_SIZE-1:0] predFromToken [1:0];
     wire [`DATA_SIZE-1:0] selectedDataLo [1:0];
+    
     
     /* The logic of insts[0] */
     
-    instDecoder dec0 (insts[0],
-                      inDataReadys,
-                      isOutputFulls,
-                      dataHiMatchTag[0],
-                      dataLoIsZero,
-                      predIsTrue[0],
-                      storedData[`DATA_SIZE*2-1:`DATA_SIZE],
-                      readInputs[0],
-                      writeOutputs[0],
-                      writeDataHi[0], nextDataHi[0],
-                      writeDataLo[0], nextDataLo[0], dataLoSel[0],
-                      aluIn0Sel[0], aluIn1Sel[0], aluIn1FromData[0], aluFuncSel[0]);
+    instDecoder dec0(insts[0],
+                     inDataReadys,
+                     isOutputFulls,
+                     aluIn0LoNotZero[0], aluIn0LoIsAllOn[0], aluIn0HiEqDataHi[0],
+                     aluIn1LoNotZero[0], aluIn1LoIsAllOn[0],
+                     dataLoIsZero,
+                     storedData[`DATA_SIZE*2-1:`DATA_SIZE],
+                     readInputs[0],
+                     writeOutputs[0],
+                     writeDataHi[0], nextDataHi[0],
+                     writeDataLo[0], nextDataLo[0], dataLoSel[0],
+                     aluIn0Sel[0], aluIn1Sel[0], aluFuncSel[0],
+                     aluIn0LoValidBits[0], aluIn1LoValidBits[0],
+                     aluIn0LoExcludeLSB[0], aluIn1LoExcludeLSB[0],
+                     busValidPart[0], busExtraBitToSet[0], busExtraBitValue[0]);
                       
-    mux8#(`DATA_SIZE*2) aluIn0Mux0(inDatas, aluIn0Sel[0], aluIn0[0]);
-    mux8#(`DATA_SIZE*2) aluIn1TempMux0(inDatas, aluIn1Sel[0], aluIn1Temp[0]);
-    mux2#(`DATA_SIZE*2) aluIn1Mux0(aluIn1Temp[0], storedData, aluIn1FromData[0], aluIn1[0]);
-    mux4#(`DATA_SIZE) dataLoInMux0(increasedDataLo, decreasedDataLo, tagToStore[0], nextDataLo[0], dataLoSel[0], selectedDataLo[0]);
+    mux12#(`DATA_SIZE*2) aluIn0Mux0(inDatas, hBus, vBus,           ,, aluIn0Sel[0], aluIn0[0]);
+    mux12#(`DATA_SIZE*2) aluIn1Mux0(inDatas, hBus, vBus, storedData,, aluIn1Sel[0], aluIn1[0]);
     
-    /* To reduce the amount of mux, the tokens to match tags are always aluIn0,
-       and the pred tokens are always aluIn1Temp. */
-    assign tagFromToken[0] = aluIn1Temp[0][`DATA_SIZE*2-1:`DATA_SIZE];
-    assign tagToStore[0] = aluIn1Temp[0][`DATA_SIZE-1:0];
-    assign predFromToken[0] = aluIn0[0][`DATA_SIZE-1:0];
+    mux4#(`DATA_SIZE) dataLoInMux0(increasedDataLo, decreasedDataLo, aluIn0[0][`DATA_SIZE-1:0], nextDataLo[0], dataLoSel[0], selectedDataLo[0]);
     
-    equal#(`DATA_SIZE) tagEqual0(tagFromToken[0], storedData[`DATA_SIZE*2-1:`DATA_SIZE], dataHiMatchTag[0]);
-    notZero#(`DATA_SIZE) predTrue0(predFromToken[0], predIsTrue[0]);
+    validNotZero#(`DATA_SIZE) aluIn0NE0(aluIn0[0][`DATA_SIZE-1:0], aluIn0LoValidBits[0], aluIn0LoExcludeLSB[0], aluIn0LoNotZero[0]);
+    validAllOn  #(`DATA_SIZE) aluIn0AO0(aluIn0[0][`DATA_SIZE-1:0], aluIn0LoValidBits[0], aluIn0LoExcludeLSB[0], aluIn0LoIsAllOn[0]);
+
+    validNotZero#(`DATA_SIZE) aluIn1NE0(aluIn1[0][`DATA_SIZE-1:0], aluIn1LoValidBits[0], aluIn1LoExcludeLSB[0], aluIn1LoNotZero[0]);
+    validAllOn  #(`DATA_SIZE) aluIn1AO0(aluIn1[0][`DATA_SIZE-1:0], aluIn1LoValidBits[0], aluIn1LoExcludeLSB[0], aluIn1LoIsAllOn[0]);
+    
+    equal#(`DATA_SIZE-1) tagEqual0(aluIn0[0][`DATA_SIZE*2-2:`DATA_SIZE], storedData[`DATA_SIZE*2-2:`DATA_SIZE], aluIn0HiEqDataHi[0]);
     
     alu alu0(aluIn0[0], aluIn1[0], aluFuncSel[0], aluOuts[0]);
     
     /* The logic of insts[1] */
     
-        instDecoder dec1 (insts[1],
-                      inDataReadys,
-                      isOutputFulls,
-                      dataHiMatchTag[1],
-                      dataLoIsZero,
-                      predIsTrue[1],
-                      storedData[`DATA_SIZE*2-1:`DATA_SIZE],
-                      readInputs[1],
-                      writeOutputs[1],
-                      writeDataHi[1], nextDataHi[1],
-                      writeDataLo[1], nextDataLo[1], dataLoSel[1],
-                      aluIn0Sel[1], aluIn1Sel[1], aluIn1FromData[1], aluFuncSel[1]);
+    instDecoder dec1(insts[1],
+                     inDataReadys,
+                     isOutputFulls,
+                     aluIn0LoNotZero[1], aluIn0LoIsAllOn[1], aluIn0HiEqDataHi[1],
+                     aluIn1LoNotZero[1], aluIn1LoIsAllOn[1],
+                     dataLoIsZero,
+                     storedData[`DATA_SIZE*2-1:`DATA_SIZE],
+                     readInputs[1],
+                     writeOutputs[1],
+                     writeDataHi[1], nextDataHi[1],
+                     writeDataLo[1], nextDataLo[1], dataLoSel[1],
+                     aluIn0Sel[1], aluIn1Sel[1], aluFuncSel[1],
+                     aluIn0LoValidBits[1], aluIn1LoValidBits[1],
+                     aluIn0LoExcludeLSB[1], aluIn1LoExcludeLSB[1],
+                     busValidPart[1], busExtraBitToSet[1], busExtraBitValue[1]);
                       
-    mux8#(`DATA_SIZE*2) aluIn0Mux1(inDatas, aluIn0Sel[1], aluIn0[1]);
-    mux8#(`DATA_SIZE*2) aluIn1TempMux1(inDatas, aluIn1Sel[1], aluIn1Temp[1]);
-    mux2#(`DATA_SIZE*2) aluIn1Mux1(aluIn1Temp[1], storedData, aluIn1FromData[1], aluIn1[1]);
-    mux4#(`DATA_SIZE) dataLoInMux1(increasedDataLo, decreasedDataLo, tagToStore[1], nextDataLo[1], dataLoSel[1], selectedDataLo[1]);
+    mux12#(`DATA_SIZE*2) aluIn0Mux1(inDatas, hBus, vBus,           ,, aluIn0Sel[1], aluIn0[1]);
+    mux12#(`DATA_SIZE*2) aluIn1Mux1(inDatas, hBus, vBus, storedData,, aluIn1Sel[1], aluIn1[1]);
     
-    /* To reduce the amount of mux, the tokens to match tags are always aluIn0,
-       and the pred tokens are always aluIn1Temp. */
-    assign tagFromToken[1] = aluIn1Temp[1][`DATA_SIZE*2-1:`DATA_SIZE];
-    assign tagToStore[1] = aluIn1Temp[1][`DATA_SIZE-1:0];
-    assign predFromToken[1] = aluIn0[1][`DATA_SIZE-1:0];
+    mux4#(`DATA_SIZE) dataLoInMux1(increasedDataLo, decreasedDataLo, aluIn0[1][`DATA_SIZE-1:0], nextDataLo[1], dataLoSel[1], selectedDataLo[1]);
     
-    equal#(`DATA_SIZE) tagEqual1(tagFromToken[1], storedData[`DATA_SIZE*2-1:`DATA_SIZE], dataHiMatchTag[1]);
-    notZero#(`DATA_SIZE) predTrue1(predFromToken[1], predIsTrue[1]);
+    validNotZero#(`DATA_SIZE) aluIn0NE1(aluIn0[1][`DATA_SIZE-1:0], aluIn0LoValidBits[1], aluIn0LoExcludeLSB[1], aluIn0LoNotZero[1]);
+    validAllOn  #(`DATA_SIZE) aluIn0AO1(aluIn0[1][`DATA_SIZE-1:0], aluIn0LoValidBits[1], aluIn0LoExcludeLSB[1], aluIn0LoIsAllOn[1]);
+
+    validNotZero#(`DATA_SIZE) aluIn1NE1(aluIn1[1][`DATA_SIZE-1:0], aluIn1LoValidBits[1], aluIn1LoExcludeLSB[1], aluIn1LoNotZero[1]);
+    validAllOn  #(`DATA_SIZE) aluIn1AO1(aluIn1[1][`DATA_SIZE-1:0], aluIn1LoValidBits[1], aluIn1LoExcludeLSB[1], aluIn1LoIsAllOn[1]);
+    
+    equal#(`DATA_SIZE-1) tagEqual1(aluIn0[1][`DATA_SIZE*2-2:`DATA_SIZE], storedData[`DATA_SIZE*2-2:`DATA_SIZE], aluIn0HiEqDataHi[1]);
     
     alu alu1(aluIn0[1], aluIn1[1], aluFuncSel[1], aluOuts[1]);
     
@@ -797,6 +1131,9 @@ module pe2(input clk,
     select2#(`DATA_SIZE*2) sel5(aluOuts[0], aluOuts[1], writeOutputs[0][5], writeOutputs[1][5], dataToWrite[5]);
     select2#(`DATA_SIZE*2) sel6(aluOuts[0], aluOuts[1], writeOutputs[0][6], writeOutputs[1][6], dataToWrite[6]);
     select2#(`DATA_SIZE*2) sel7(aluOuts[0], aluOuts[1], writeOutputs[0][7], writeOutputs[1][7], dataToWrite[7]);
+    
+    busOutMux hBusMux(aluOuts[0], aluOuts[1], busValidPart[0][0], busValidPart[1][0], busExtraBitToSet[0][0], busExtraBitToSet[1][0], busExtraBitValue[0][0], busExtraBitValue[1][0], hBus);
+    busOutMux vBusMux(aluOuts[0], aluOuts[1], busValidPart[0][1], busValidPart[1][1], busExtraBitToSet[0][1], busExtraBitToSet[1][1], busExtraBitValue[0][1], busExtraBitValue[1][1], vBus);
     
     fifo_n#(`DATA_SIZE*2) outFIFO_U0 (clk, dataToWrite[0], readOutDatas[0], writeOutputs[0][0] | writeOutputs[1][0], outDatas[0], isOutputFulls[0], isOutputEmptys[0]);
     fifo_n#(`DATA_SIZE*2) outFIFO_U1 (clk, dataToWrite[1], readOutDatas[1], writeOutputs[0][1] | writeOutputs[1][1], outDatas[1], isOutputFulls[1], isOutputEmptys[1]);
@@ -815,204 +1152,6 @@ module pe2(input clk,
     assign readInDatas[5] = readInputs[0][5] | readInputs[1][5];
     assign readInDatas[6] = readInputs[0][6] | readInputs[1][6];
     assign readInDatas[7] = readInputs[0][7] | readInputs[1][7];
-    
-    initial begin
-        insts[0][31:26] = OP0;
-        insts[0][25:12] = Imm0;
-        insts[0][11:9] = Arg00;
-        insts[0][8:6] = Arg01;
-        insts[0][5:3] = Arg02;
-        insts[0][2:0] = Arg03;
-        
-        insts[1][31:26] = OP1;
-        insts[1][25:12] = Imm1;
-        insts[1][11:9] = Arg10;
-        insts[1][8:6] = Arg11;
-        insts[1][5:3] = Arg12;
-        insts[1][2:0] = Arg13;
-        
-        storedData[`DATA_SIZE*2-1:`DATA_SIZE] = DataHi;
-        storedData[`DATA_SIZE-1:0] = DataLo;
-        
-        // Initialize tokens
-        // Problem: What if FIFO has its initial block?
-        
-        outFIFO_U0.isFull = 0;
-        outFIFO_U0.readHead = 0;
-        if (U0Tok1 != -1 && U0Tok0 == -1) begin
-            $display("%m: Token 0 can't be -1 while token 1 is not -1");
-            $finish;
-        end
-        else if (U0Tok1 != -1 && U0Tok0 != -1) begin
-            outFIFO_U0.isEmpty = 0;
-            outFIFO_U0.regs[0] = U0Tok0;
-            outFIFO_U0.regs[1] = U0Tok1;
-            outFIFO_U0.writeHead = 2;
-        end
-        else if (U0Tok0 != -1) begin
-            outFIFO_U0.isEmpty = 0;
-            outFIFO_U0.regs[0] = U0Tok0;
-            outFIFO_U0.writeHead = 1;
-        end
-        else begin
-            outFIFO_U0.isEmpty = 1;
-            outFIFO_U0.writeHead = 0;
-        end
-        
-        outFIFO_U1.isFull = 0;
-        outFIFO_U1.readHead = 0;
-        if (U1Tok1 != -1 && U1Tok0 == -1) begin
-            $display("%m: Token 0 can't be -1 while token 1 is not -1");
-            $finish;
-        end
-        else if (U1Tok1 != -1 && U1Tok0 != -1) begin
-            outFIFO_U1.isEmpty = 0;
-            outFIFO_U1.regs[0] = U1Tok0;
-            outFIFO_U1.regs[1] = U1Tok1;
-            outFIFO_U1.writeHead = 2;
-        end
-        else if (U1Tok0 != -1) begin
-            outFIFO_U1.isEmpty = 0;
-            outFIFO_U1.regs[0] = U1Tok0;
-            outFIFO_U1.writeHead = 1;
-        end
-        else begin
-            outFIFO_U1.isEmpty = 1;
-            outFIFO_U1.writeHead = 0;
-        end
-        
-        outFIFO_D0.isFull = 0;
-        outFIFO_D0.readHead = 0;
-        if (D0Tok1 != -1 && D0Tok0 == -1) begin
-            $display("%m: Token 0 can't be -1 while token 1 is not -1");
-            $finish;
-        end
-        else if (D0Tok1 != -1 && D0Tok0 != -1) begin
-            outFIFO_D0.isEmpty = 0;
-            outFIFO_D0.regs[0] = D0Tok0;
-            outFIFO_D0.regs[1] = D0Tok1;
-            outFIFO_D0.writeHead = 2;
-        end
-        else if (D0Tok0 != -1) begin
-            outFIFO_D0.isEmpty = 0;
-            outFIFO_D0.regs[0] = D0Tok0;
-            outFIFO_D0.writeHead = 1;
-        end
-        else begin
-            outFIFO_D0.isEmpty = 1;
-            outFIFO_D0.writeHead = 0;
-        end
-        
-        outFIFO_D1.isFull = 0;
-        outFIFO_D1.readHead = 0;
-        if (D1Tok1 != -1 && D1Tok0 == -1) begin
-            $display("%m: Token 0 can't be -1 while token 1 is not -1");
-            $finish;
-        end
-        else if (D1Tok1 != -1 && D1Tok0 != -1) begin
-            outFIFO_D1.isEmpty = 0;
-            outFIFO_D1.regs[0] = D1Tok0;
-            outFIFO_D1.regs[1] = D1Tok1;
-            outFIFO_D1.writeHead = 2;
-        end
-        else if (D1Tok0 != -1) begin
-            outFIFO_D1.isEmpty = 0;
-            outFIFO_D1.regs[0] = D1Tok0;
-            outFIFO_D1.writeHead = 1;
-        end
-        else begin
-            outFIFO_D1.isEmpty = 1;
-            outFIFO_D1.writeHead = 0;
-        end
-        
-        outFIFO_L0.isFull = 0;
-        outFIFO_L0.readHead = 0;
-        if (L0Tok1 != -1 && L0Tok0 == -1) begin
-            $display("%m: Token 0 can't be -1 while token 1 is not -1");
-            $finish;
-        end
-        else if (L0Tok1 != -1 && L0Tok0 != -1) begin
-            outFIFO_L0.isEmpty = 0;
-            outFIFO_L0.regs[0] = L0Tok0;
-            outFIFO_L0.regs[1] = L0Tok1;
-            outFIFO_L0.writeHead = 2;
-        end
-        else if (L0Tok0 != -1) begin
-            outFIFO_L0.isEmpty = 0;
-            outFIFO_L0.regs[0] = L0Tok0;
-            outFIFO_L0.writeHead = 1;
-        end
-        else begin
-            outFIFO_L0.isEmpty = 1;
-            outFIFO_L0.writeHead = 0;
-        end
-        
-        outFIFO_L1.isFull = 0;
-        outFIFO_L1.readHead = 0;
-        if (L1Tok1 != -1 && L1Tok0 == -1) begin
-            $display("%m: Token 0 can't be -1 while token 1 is not -1");
-            $finish;
-        end
-        else if (L1Tok1 != -1 && L1Tok0 != -1) begin
-            outFIFO_L1.isEmpty = 0;
-            outFIFO_L1.regs[0] = L1Tok0;
-            outFIFO_L1.regs[1] = L1Tok1;
-            outFIFO_L1.writeHead = 2;
-        end
-        else if (L1Tok0 != -1) begin
-            outFIFO_L1.isEmpty = 0;
-            outFIFO_L1.regs[0] = L1Tok0;
-            outFIFO_L1.writeHead = 1;
-        end
-        else begin
-            outFIFO_L1.isEmpty = 1;
-            outFIFO_L1.writeHead = 0;
-        end
-        
-        outFIFO_R0.isFull = 0;
-        outFIFO_R0.readHead = 0;
-        if (R0Tok1 != -1 && R0Tok0 == -1) begin
-            $display("%m: Token 0 can't be -1 while token 1 is not -1");
-            $finish;
-        end
-        else if (R0Tok1 != -1 && R0Tok0 != -1) begin
-            outFIFO_R0.isEmpty = 0;
-            outFIFO_R0.regs[0] = R0Tok0;
-            outFIFO_R0.regs[1] = R0Tok1;
-            outFIFO_R0.writeHead = 2;
-        end
-        else if (R0Tok0 != -1) begin
-            outFIFO_R0.isEmpty = 0;
-            outFIFO_R0.regs[0] = R0Tok0;
-            outFIFO_R0.writeHead = 1;
-        end
-        else begin
-            outFIFO_R0.isEmpty = 1;
-            outFIFO_R0.writeHead = 0;
-        end
-        
-        outFIFO_R1.isFull = 0;
-        outFIFO_R1.readHead = 0;
-        if (R1Tok1 != -1 && R1Tok0 == -1) begin
-            $display("%m: Token 0 can't be -1 while token 1 is not -1");
-            $finish;
-        end
-        else if (R1Tok1 != -1 && R1Tok0 != -1) begin
-            outFIFO_R1.isEmpty = 0;
-            outFIFO_R1.regs[0] = R1Tok0;
-            outFIFO_R1.regs[1] = R1Tok1;
-            outFIFO_R1.writeHead = 2;
-        end
-        else if (R1Tok0 != -1) begin
-            outFIFO_R1.isEmpty = 0;
-            outFIFO_R1.regs[0] = R1Tok0;
-            outFIFO_R1.writeHead = 1;
-        end
-        else begin
-            outFIFO_R1.isEmpty = 1;
-            outFIFO_R1.writeHead = 0;
-        end
-    end
     
     always @(posedge clk) begin
         if (writeDataHi[0] & writeDataHi[1])

@@ -4,7 +4,6 @@
 #include <vector>
 #include <map>
 
-
 enum OP
 {
     OP_NOP,
@@ -27,17 +26,31 @@ enum OP
     OP_EQ_DATA,
     OP_NE_DATA,
     OP_ST,
-    OP_DISCARD
+    OP_DISCARD,
+    OP_TOK_TO_BUS,
+    OP_BUS_TO_TOK,
+    OP_BUS_FWD_BIT,
+    OP_BUS_AND_BIT,
+    OP_BUS_OR_BIT,
+    OP_BUS_NAND_BIT,
+    OP_BUS_NOR_BIT,
+    OP_TAG_MATCHER,
+    OP_MATCHER_CTRL,
+    OP_STORE_TAG2,
+    OP_RESTORE_TAG2,
+    OP_BUS_FWD_LH,
+    OP_BUS_CFWD_HI
 };
 
-enum DIR { U0=0, U1=1, D0=2, D1=3, L0=4, L1=5, R0=6, R1=7 };
+enum DIR { U0=0, U1=1, D0=2, D1=3, L0=4, L1=5, R0=6, R1=7, HB, VB };
 
 std::pair<DIR, const char*> DirNames[] =
 {
     std::pair<DIR, const char*>(U0, "U0"), std::pair<DIR, const char*>(U1, "U1"),
     std::pair<DIR, const char*>(D0, "D0"), std::pair<DIR, const char*>(D1, "D1"),
     std::pair<DIR, const char*>(L0, "L0"), std::pair<DIR, const char*>(L1, "L1"),
-    std::pair<DIR, const char*>(R0, "R0"), std::pair<DIR, const char*>(R1, "R1")
+    std::pair<DIR, const char*>(R0, "R0"), std::pair<DIR, const char*>(R1, "R1"),
+    std::pair<DIR, const char*>(HB, "HB"), std::pair<DIR, const char*>(VB, "VB")
 };
 
 std::pair<OP, const char*> OpNames[] =
@@ -57,6 +70,8 @@ std::pair<OP, const char*> OpNames[] =
     std::pair<OP, const char*>(OP_SYNC,         "SYNC"),
     std::pair<OP, const char*>(OP_COMBINE_TAG,  "COMBINE_TAG"),
     std::pair<OP, const char*>(OP_NEW_TAG,      "NEW_TAG"),
+    std::pair<OP, const char*>(OP_STORE_TAG2,   "STORE_TAG2"),
+    std::pair<OP, const char*>(OP_RESTORE_TAG2, "RESTORE_TAG2"),
     std::pair<OP, const char*>(OP_STORE_TAG,    "STORE_TAG"),
     std::pair<OP, const char*>(OP_RESTORE_TAG,  "RESTORE_TAG"),
     std::pair<OP, const char*>(OP_LOOP_HEAD,    "LOOP_HEAD"),
@@ -64,7 +79,18 @@ std::pair<OP, const char*> OpNames[] =
     std::pair<OP, const char*>(OP_EQ_DATA,      "EQ_DATA"),
     std::pair<OP, const char*>(OP_NE_DATA,      "NE_DATA"),
     std::pair<OP, const char*>(OP_ST,           "ST"),
-    std::pair<OP, const char*>(OP_DISCARD,      "DISCARD") 
+    std::pair<OP, const char*>(OP_DISCARD,      "DISCARD"),
+    std::pair<OP, const char*>(OP_TOK_TO_BUS,   "TOK_TO_BUS"),
+    std::pair<OP, const char*>(OP_BUS_TO_TOK,   "BUS_TO_TOK"),
+    std::pair<OP, const char*>(OP_BUS_FWD_BIT,  "BUS_FWD_BIT"),
+    std::pair<OP, const char*>(OP_BUS_AND_BIT,  "BUS_AND_BIT"),
+    std::pair<OP, const char*>(OP_BUS_OR_BIT,   "BUS_OR_BIT"),
+    std::pair<OP, const char*>(OP_BUS_NAND_BIT, "BUS_NAND_BIT"),
+    std::pair<OP, const char*>(OP_BUS_NOR_BIT,  "BUS_NOR_BIT"),
+    std::pair<OP, const char*>(OP_TAG_MATCHER,  "TAG_MATCHER"),
+    std::pair<OP, const char*>(OP_MATCHER_CTRL, "MATCHER_CTRL"),
+    std::pair<OP, const char*>(OP_BUS_FWD_LH,   "BUS_FWD_LH"),
+    std::pair<OP, const char*>(OP_BUS_CFWD_HI,  "BUS_CFWD_HI")
 };
 
 const char *TokData = "DATA";
@@ -275,6 +301,7 @@ struct PE
     int r0tok1 = -1;
     int r1tok0 = -1;
     int r1tok1 = -1;
+    bool isNOP = true;
     
     void setInst(int instNum, char *&ptr)
     {
@@ -376,11 +403,20 @@ struct PE
         while (true)
         {
             if (hasNextOp(ptr))
+            {
                 setInst(numInsts++, ptr);
+                isNOP = false;
+            }
             else if (hasNextData(ptr))
+            {
                 setData(ptr);
+                isNOP = false;
+            }
             else if (hasNextDir(ptr))
+            {
                 setToken(ptr);
+                isNOP = false;
+            }
             else
                 break;
         }
@@ -499,6 +535,38 @@ struct PE
         exit(0);
     }
     
+    const char* getOpStr(OP op)
+    {
+        static char Name[100];
+        for (int i = 0; i < sizeof(OpNames)/sizeof(OpNames[0]); i++)
+        {
+            if (OpNames[i].first == op)
+            {
+                sprintf(Name, "`OP_%s", OpNames[i].second);
+                return Name;
+            }
+        }
+
+        fprintf(stderr, "Illegal OP!\n");
+        exit(0);
+    }
+    
+    const char *getDirStr(DIR dir)
+    {
+        static char Name[100];
+        for (int i = 0; i < sizeof(DirNames)/sizeof(DirNames[0]); i++)
+        {
+            if (DirNames[i].first == dir)
+            {
+                sprintf(Name, "`DIR_%s", DirNames[i].second);
+                return Name;
+            }
+        }
+
+        fprintf(stderr, "Illegal Dir!\n");
+        exit(0);
+    }
+    
     void printParameter()
     {
         printf("#(");
@@ -538,6 +606,74 @@ struct PE
         printf(".R1Tok1(%d)",   r1tok1);
         
         printf(")\n");
+    }
+    
+    void printInstInit(const char *name, int instID, OP op, int imm, DIR arg0, DIR arg1, DIR arg2, DIR arg3)
+    {
+        printf("        ");
+        printf("%s.insts[%d][31:26] = %s; ", name, instID, getOpStr(op));
+        printf("%s.insts[%d][25:12] = %d; ", name, instID, imm);
+        printf("%s.insts[%d][11:9] = %s; ", name, instID, getDirStr(arg0));
+        printf("%s.insts[%d][ 8:6] = %s; ", name, instID, getDirStr(arg1));
+        printf("%s.insts[%d][ 5:3] = %s; ", name, instID, getDirStr(arg2));
+        printf("%s.insts[%d][ 2:0] = %s; ", name, instID, getDirStr(arg3));
+        printf("\n");
+    }
+    
+    void printDataInit(const char *name, int data)
+    {
+        printf("        ");
+        printf("%s.storedData = %d;\n", name, data);
+    }
+    
+    void printTokenInit(const char *name, const char *dirName, int tok0, int tok1)
+    {
+        printf("        ");
+        if (tok1 != -1 && tok0 == -1)
+        {
+            fprintf(stderr, "Tok0 can't be -1 while tok1 is not -1 for %s.%s\n", name, dirName);
+            exit(0);            
+        }
+        else if (tok1 != -1 && tok0 != -1)
+        {
+            printf("%s.outFIFO_%s.isEmptyReg = 0; ", name, dirName);
+            printf("%s.outFIFO_%s.isFullReg = 0; ", name, dirName);
+            printf("%s.outFIFO_%s.regs[0] = %d; ", name, dirName, tok0);
+            printf("%s.outFIFO_%s.regs[1] = %d; ", name, dirName, tok1);
+            printf("%s.outFIFO_%s.readHead = 0; ", name, dirName);
+            printf("%s.outFIFO_%s.writeHead = 2; ", name, dirName);
+        }
+        else if (tok0 != -1)
+        {
+            printf("%s.outFIFO_%s.isEmptyReg = 0; ", name, dirName);
+            printf("%s.outFIFO_%s.isFullReg = 0; ", name, dirName);
+            printf("%s.outFIFO_%s.regs[0] = %d; ", name, dirName, tok0);
+            printf("%s.outFIFO_%s.readHead = 0; ", name, dirName);
+            printf("%s.outFIFO_%s.writeHead = 1; ", name, dirName);
+        }
+        else
+        {
+            printf("%s.outFIFO_%s.isEmptyReg = 1; ", name, dirName);
+            printf("%s.outFIFO_%s.isFullReg = 0; ", name, dirName);
+            printf("%s.outFIFO_%s.readHead = 0; ", name, dirName);
+            printf("%s.outFIFO_%s.writeHead = 0; ", name, dirName);
+        }
+        printf("\n");
+    }
+    
+    void printInit(const char *name)
+    {
+        printInstInit(name, 0, op0, imm0, arg00, arg01, arg02, arg03);
+        printInstInit(name, 1, op1, imm1, arg10, arg11, arg12, arg13);
+        printDataInit(name, data);
+        printTokenInit(name, "U0", u0tok0, u0tok1);
+        printTokenInit(name, "U1", u1tok0, u1tok1);
+        printTokenInit(name, "D0", d0tok0, d0tok1);
+        printTokenInit(name, "D1", d1tok0, d1tok1);
+        printTokenInit(name, "L0", l0tok0, l0tok1);
+        printTokenInit(name, "L1", l1tok0, l1tok1);
+        printTokenInit(name, "R0", r0tok0, r0tok1);
+        printTokenInit(name, "R1", r1tok0, r1tok1);
     }
     
     void addToken(DIR dir, int val)
@@ -693,6 +829,13 @@ std::vector<std::vector<PE>> readFile(FILE *fp)
     return result;
 }
 
+const char* getPEName(int y, int x)
+{
+    static char Name[100];
+    sprintf(Name, "pe_%d%c", y+1, x+'A');
+    return Name;
+}
+
 int main(int argc, char *argv[])
 {
     FILE *fp = fopen(argv[1], "rb");
@@ -702,8 +845,24 @@ int main(int argc, char *argv[])
     
     fclose(fp);
     
-    int width = pes[0].size();
-    int height = pes.size();
+    int simulationTime = 100;
+    if (argc > 2)
+        simulationTime = atoi(argv[2]);
+    
+    int width = 0, height = 0;
+    for (int j = 0; j < pes.size(); j++)
+    {
+        for (int i = 0; i < pes[j].size(); i++)
+        {
+            if (pes[j][i].isNOP == false)
+            {
+                if (height < j+1)
+                    height = j+1;
+                if (width < i+1)
+                    width = i+1;
+            }
+        }
+    }
     
     printf("`define DATA_SIZE   8\n");
     printf("`include \"pe2.v\"\n\n");
@@ -724,6 +883,9 @@ int main(int argc, char *argv[])
     printf("    wire [7:0][`DATA_SIZE*2-1:0] inData [%d:0][%d:0];\n", height-1, width-1);
     printf("    wire [7:0] inDataReady [%d:0][%d:0];\n", height-1, width-1);
     printf("    wire [7:0] readOutData [%d:0][%d:0];\n\n", height-1, width-1);
+    
+    printf("    wire [`DATA_SIZE*2-1:0] hBus [%d:0];\n", height);
+    printf("    wire [`DATA_SIZE*2-1:0] vBus [%d:0];\n", width);
     
     /* U0 = 0, U1 = 1, D0 = 2, D1 = 3, L0 = 4, L1 = 5, R0 = 6, R1 = 7 */
     int xOffset[8] = { 0,  0,  0,  0, -1, -2,  1,  2};
@@ -757,9 +919,8 @@ int main(int argc, char *argv[])
             
             /* Declare the PE */
             printf("    pe2");
-            pes[y][x].printParameter();
-            printf("    pe_%d%c(clk, inData[%d][%d], inDataReady[%d][%d], readInData[%d][%d], outData[%d][%d], outDataReady[%d][%d], readOutData[%d][%d]);\n\n",
-                   y+1, x+'A', y, x, y, x, y, x, y, x, y, x, y, x);
+            printf("    %s(clk, inData[%d][%d], inDataReady[%d][%d], readInData[%d][%d], outData[%d][%d], outDataReady[%d][%d], readOutData[%d][%d], hBus[%d], vBus[%d]);\n\n",
+                   getPEName(y, x), y, x, y, x, y, x, y, x, y, x, y, x, y, x);
         }
     }
     
@@ -769,7 +930,17 @@ int main(int argc, char *argv[])
     printf("        clkReg = 0;\n");
     printf("        zeroData = 0;\n");
     printf("        zeroFlag = 0;\n\n");
-    printf("    #600 $finish;\n");
+    
+    for (int y = 0; y < height; y++)
+    {
+        for (int x = 0; x < width; x++)
+        {
+            pes[y][x].printInit(getPEName(y, x));
+            printf("\n");
+        }
+    }
+    
+    printf("    #%d $finish;\n", simulationTime);
     printf("    end\n\n");
     
     printf("    always begin\n");

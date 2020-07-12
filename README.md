@@ -4,26 +4,20 @@ This is an experimental project to implement dynamic dataflow execution on CGRA.
 This project is tested on the simulator of Icarus Verilog, but not yet on any FPGA or real chips.
 
 # Architecture
-In this CGRA each PE has 8 full-duplex ports, namely U0, U1, D0, D1, L0, L1, R0, R1. Each port connects to (a corresponding port of) a neighbor PE. For example, R0 conntect to the PE on the right, and R1 connected to the PE two steps on the right. The other prefixes means UP, DOWN, and LEFT, respectively. Each PE can perform two instructions concurrently, but the two instructions can not share any input or output port. Each token is 16-bit wide, with higher 8 bits acts as tag and lower 8 bits acts as data. The tokens are buffered in FIFOs if the destination PEs are not ready to receive them. Each PE also has an internal 16-bit register for storing some internal state of the instructions.
+In this CGRA each PE has 8 full-duplex ports, namely U0, U1, D0, D1, L0, L1, R0, R1. Each port connects to (a corresponding port of) a neighbor PE. For example, R0 conntect to the PE on the right, and R1 connected to the PE two steps on the right. The other prefixes means UP, DOWN, and LEFT, respectively. All PEs in a row are connected to a shared horizontal bus,
+and all PEs in a column are connected to a shared vertical bus. Each PE can perform two instructions concurrently, but the two instructions can not share any input or output port. Each token is 16-bit wide, with higher 8 bits acts as tag and lower 8 bits acts as data. The tokens are buffered in FIFOs if the destination PEs are not ready to receive them. Each PE also has an internal 16-bit register for storing some internal state of the instructions.
 
 # How to Build and Run an Example
 This project requires MinGW and Icarus Verilog installed. Their executable path should be set to the path environment variable.
-If ready, run the following command in cmd
+The ./examples directory contains several examples both in .csv and .xlsx format, .csv format are the actual acceptable format while .xlsx files contain more details.
+You can obtain the same .csv files by saving the .xlsx files as .csv files.
 
-run.bat example/popcount.csv
+To run the popcount1 example, type the following command in cmd
 
+run.bat example/popcount/popcount1.csv 4000
+
+Where 4000 is the number of cycles to be simulated, you can change it as you wish.
 This will show a list of read and write of each FIFO of each PE, which effectively represents the tokens transmitted and received by each PE at each cycle.
-
-# About the Example
-The example computes the population count (number of bit 1) of 0 ~ 9. The population count of a number X is computed by iteratively execute X = X&(X-1) and count how many iterations are required for X to reach 0. Therefore, this example is actually a 2-level nested loop.
-
-example/popcount.csv is the data flow graph implemented by our CGRA instructions.
-
-example/popcount.odg is a more readable data flow graph of the example, you may need LibreOffice to open it.
-
-example/popcount.ods is a colorized version of example/popcount.csv, with matching color in example/popcount.odg.
-
-The output of the computation are pairs of tokens (i, popcount(i)), which will eventually flow to the ST node. Thus we can check the correctness of the computation by examining the input of the ST node. Actually we let the simulator to print a message whenever the ST node is executed, you can search "Popcount" in the output message.
 
 # References
 Dennis and Misunas, “A Preliminary Architecture for a Basic Data Flow Processor”\
