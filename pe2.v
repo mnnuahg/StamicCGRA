@@ -984,7 +984,7 @@ module alu(input [`DATA_SIZE*2-1:0] inData0,
             end
             `ALU_FUNC_ST: begin
                 outDataReg = inData0;
-                $display("Popcount of %d is %d", inData0[`DATA_SIZE-1:0], inData1[`DATA_SIZE-1:0]);
+                $display("Store %d to %d", inData1[`DATA_SIZE-1:0], inData0[`DATA_SIZE-1:0]);
             end
         endcase
     end
