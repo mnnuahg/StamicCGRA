@@ -1,3 +1,3 @@
 The example computes the population count (number of bit 1) of the input token. The population count of a number X is computed by iteratively execute X = X&(X-1) and count how many iterations are required for X to reach 0.
-The input and output PEs are 1B and 6B for popcount1, and 1B and 9B for popcount2. You can search them in the output message.
+The input and output PEs are 1B and 5B for popcount1, and 1B and 9B for popcount2. You can search them in the output message.
 The initial input is a token 0x10f, which means 0x1 for tag and 0xf for data. The input is specified in grid 1A as an initial data in the output FIFO R0.

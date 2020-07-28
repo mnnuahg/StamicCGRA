@@ -33,6 +33,8 @@
 `define OP_RESTORE_TAG2 30  // restore_tag tag_in_bus, data_in_bus, out
 `define OP_BUS_FWD_LH   31  // bus_fwd_lh in_bus, out_bus
 `define OP_BUS_CFWD_HI  32  // bus_cfwd_hi in_sig_bus, out_bus
+`define OP_SELECT_PRED  33  // select_pred true_in, false_in, pred, out
+`define OP_OX           34  // ox in0, in1, out
 
 `define DIR_U0          0
 `define DIR_U1          1
@@ -595,6 +597,22 @@ module instDecoder
                     end
                 endcase
             end
+            `OP_SELECT_PRED: begin
+                aluFuncSelReg = `ALU_FUNC_IN1;
+                aluIn0SelReg = arg2;
+                if (isInputReadys[arg0] && isInputReadys[arg1] && isInputReadys[arg2] && !isOutputFulls[arg3]) begin
+                    readInputsReg[arg0] = 1;
+                    readInputsReg[arg1] = 1;
+                    readInputsReg[arg2] = 1;
+                    writeOutputsReg[arg3] = 1;
+                    if (aluIn0LoNotZero) begin
+                        aluIn1SelReg = arg0;
+                    end
+                    else begin
+                        aluIn1SelReg = arg1;
+                    end
+                end
+            end
             `OP_SWITCH_PRED: begin
                 aluIn0SelReg = arg1;   // This is used to produce aluIn0LoNotZero
                 if (isInputReadys[arg0] && isInputReadys[arg1]) begin
@@ -702,6 +720,21 @@ module instDecoder
                     aluFuncSelReg = `ALU_FUNC_IN1;
                     readInputsReg[arg0] = 1;
                     writeOutputsReg[arg3] = 1;
+                end
+            end
+            `OP_OX: begin
+                aluFuncSelReg = `ALU_FUNC_IN1;
+                if (!isOutputFulls[arg2]) begin
+                    if (isInputReadys[arg0]) begin
+                        aluIn1SelReg = arg0;
+                        readInputsReg[arg0] = 1;
+                        writeOutputsReg[arg2] = 1;
+                    end
+                    else if (isInputReadys[arg1]) begin
+                        aluIn1SelReg = arg1;
+                        readInputsReg[arg1] = 1;
+                        writeOutputsReg[arg2] = 1;
+                    end
                 end
             end
             `OP_INV_DATA: begin
