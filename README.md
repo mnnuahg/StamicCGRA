@@ -3,7 +3,7 @@ This is an experimental project to implement dynamic dataflow execution on CGRA.
 
 This project is tested on the simulator of Icarus Verilog, but not yet on any FPGA or real chips.
 
-Please refer [this slide](https://www.slideshare.net/ssuser0c5ec9/dynamic-dataflow-on-cgra) for more explaination.
+Please refer to [this slide](https://www.slideshare.net/ssuser0c5ec9/dynamic-dataflow-on-cgra-237372239) for more explaination.
 
 # Architecture
 In this CGRA each PE has 8 full-duplex ports, namely U0, U1, D0, D1, L0, L1, R0, R1. Each port connects to (a corresponding port of) a neighbor PE. For example, R0 conntect to the PE on the right, and R1 connected to the PE two steps on the right. The other prefixes means UP, DOWN, and LEFT, respectively. All PEs in a row are connected to a shared horizontal bus,
