@@ -869,6 +869,23 @@ int main(int argc, char *argv[])
     }
     
     printf("`define DATA_SIZE   8\n");
+    printf("`include \"include.h\"\n");
+    printf("`include \"increase.v\"\n");
+    printf("`include \"decrease.v\"\n");
+    printf("`include \"mux2.v\"\n");
+    printf("`include \"mux4.v\"\n");
+    printf("`include \"mux8.v\"\n");
+    printf("`include \"mux12.v\"\n");
+    printf("`include \"isZero.v\"\n");
+    printf("`include \"validAllOn.v\"\n");
+    printf("`include \"validNotZero.v\"\n");
+    printf("`include \"equal.v\"\n");
+    printf("`include \"select2.v\"\n");
+    printf("`include \"alu.v\"\n");
+    printf("`include \"busOutMux.v\"\n");
+    printf("`include \"instFieldDecoder.v\"\n");
+    printf("`include \"instDecoder.v\"\n");
+    printf("`include \"fifo_n.v\"\n");
     printf("`include \"pe2.v\"\n\n");
     
     printf("module pe2_test;\n");
